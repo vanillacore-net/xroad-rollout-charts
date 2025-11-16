@@ -1,0 +1,181 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "x-road-ssx.fullname" $ }}-config-add-ss
+spec:
+  schedule: "0 0 * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: hurl
+              image: orangeopensource/hurl:1.8.0
+              command: ["/bin/sh"]
+              args:
+                - "-c"
+                - |
+                  echo "=== Starting hurl add security server ==="
+                  echo "This will add a new security server to the existing cs1/ss0 setup"
+                  echo "All configuration loaded from environment variables and secrets"
+
+                  # Validate required variables
+                  if [ -z "$ss_number" ]; then
+                    echo "ERROR: ss_number is required (e.g., '2' for SS2, '3' for SS3)"
+                    exit 1
+                  fi
+
+                  if [ -z "$owner_member_code" ]; then
+                    echo "ERROR: owner_member_code is required (e.g., 'SH', 'SH-ZIT')"
+                    exit 1
+                  fi
+
+                  if [ -z "$owner_org_name" ]; then
+                    echo "ERROR: owner_org_name is required (e.g., 'SH', 'ZIT')"
+                    exit 1
+                  fi
+
+                  # Check if CS session variables are available
+                  if [ -z "$cs_xsrf_token" ] || [ -z "$gconf_anchor" ] || [ -z "$ca_name" ] || [ -z "$tsa_name" ] || [ -z "$tsa_url" ]; then
+                    echo "ERROR: Central Server session variables are missing!"
+                    echo "You need to run the sh-demo setup first and capture:"
+                    echo "  - cs_xsrf_token"
+                    echo "  - gconf_anchor"
+                    echo "  - ca_name"
+                    echo "  - tsa_name"
+                    echo "  - tsa_url"
+                    echo ""
+                    echo "Or manually log in to CS and get these values."
+                    exit 1
+                  fi
+
+                  # Debug: Show environment variables
+                  echo "=== Configuration ==="
+                  echo "Security Server Number: $ss_number"
+                  echo "Owner Member Code: $owner_member_code"
+                  echo "Owner Org Name: $owner_org_name"
+                  echo "SS Host: $ss1_host"
+                  echo "CS Host: $cs_host"
+                  echo "CA OCSP: $ca_ocsp_host:$ca_ocsp_port"
+
+                  # Pass environment variables explicitly to hurl
+                  # Note: We use ss1_* variable names as per the script design
+                  hurl --test /workspace/add_security-server.hurl \
+                    --variable ss1_host="$ss1_host" \
+                    --variable ss1_host_password="$ss1_host_password" \
+                    --variable ss1_host_pin="$ss1_host_pin" \
+                    --variable ss_number="$ss_number" \
+                    --variable owner_member_code="$owner_member_code" \
+                    --variable owner_org_name="$owner_org_name" \
+                    --variable cs_host="$cs_host" \
+                    --variable cs_xsrf_token="$cs_xsrf_token" \
+                    --variable gconf_anchor="$gconf_anchor" \
+                    --variable ca_name="$ca_name" \
+                    --variable ca_ocsp_host="$ca_ocsp_host" \
+                    --variable ca_ocsp_port="$ca_ocsp_port" \
+                    --variable tsa_name="$tsa_name" \
+                    --variable tsa_url="$tsa_url" \
+                    --very-verbose --insecure --retry --retry-interval=10000
+              env:
+                # New Security Server details (uses ss1_* variable naming)
+                - name: ss1_host
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env-add-ss
+                      key: ss_host
+                - name: ss1_host_pin
+                  valueFrom:
+                    secretKeyRef:
+                      name: ss-add
+                      key: tokenPin
+                - name: ss1_host_password
+                  valueFrom:
+                    secretKeyRef:
+                      name: ss-add
+                      key: password
+
+                # Security Server identification
+                - name: ss_number
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env-add-ss
+                      key: ss_number
+                - name: owner_member_code
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env-add-ss
+                      key: owner_member_code
+                - name: owner_org_name
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env-add-ss
+                      key: owner_org_name
+
+                # Central Server connection
+                - name: cs_host
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: cs_host
+
+                # CA/OCSP/TSA configuration
+                - name: ca_ocsp_host
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: ca_ocsp_host
+                - name: ca_ocsp_port
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: ca_ocsp_port
+
+                # Session variables from CS (must be provided as secrets/configmap)
+                - name: cs_xsrf_token
+                  valueFrom:
+                    secretKeyRef:
+                      name: cs-session
+                      key: xsrf_token
+                      optional: true
+                - name: gconf_anchor
+                  valueFrom:
+                    secretKeyRef:
+                      name: cs-session
+                      key: gconf_anchor
+                      optional: true
+                - name: ca_name
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env-add-ss
+                      key: ca_name
+                      optional: true
+                - name: tsa_name
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env-add-ss
+                      key: tsa_name
+                      optional: true
+                - name: tsa_url
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env-add-ss
+                      key: tsa_url
+                      optional: true
+              volumeMounts:
+                - name: ca
+                  mountPath: /workspace/ca/
+                  readOnly: true
+                - name: hurl-add-ss
+                  mountPath: /workspace/add_security-server.hurl
+                  subPath: add_security-server.hurl
+                  readOnly: true
+          volumes:
+            - name: ca
+              secret:
+                secretName: hurl-cert
+            - name: hurl-add-ss
+              configMap:
+                name: hurl-add-ss

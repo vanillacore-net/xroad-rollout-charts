@@ -1,0 +1,23 @@
+# Helm chart dependencies
+Chart.lock
+
+# Helm chart tests
+output.yaml
+output.txt
+
+# macOS speicifics
+.DS_Store
+
+# Certificates
+*.pem
+*.crt 
+*.key
+*.p12
+*.csr
+
+# LLM
+CLAUDE.md
+.claude/settings.local.json
+
+# log
+*.log

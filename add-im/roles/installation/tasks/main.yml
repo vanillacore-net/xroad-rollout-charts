@@ -1,0 +1,85 @@
+---
+# Security Server Installation Role
+# Installs the Security Server using Helm
+
+- name: Ensure certificate directory exists
+  file:
+    path: "{{ cert_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Check if Helm is installed
+  command: helm version --short
+  register: helm_check
+  changed_when: false
+  failed_when: helm_check.rc != 0
+
+- name: Check if namespace exists
+  kubernetes.core.k8s_info:
+    kind: Namespace
+    name: "{{ ss_namespace }}"
+  register: namespace_check
+  ignore_errors: yes
+  failed_when: false
+
+- name: Create namespace if it doesn't exist
+  kubernetes.core.k8s:
+    name: "{{ ss_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+  when: namespace_check.resources | default([]) | length == 0
+
+- name: Check if Helm chart is already installed
+  command: >
+    helm list -n {{ ss_namespace }} -q
+  register: helm_list
+  changed_when: false
+  failed_when: false
+
+- name: Set Helm action (install or upgrade)
+  set_fact:
+    helm_action: "{{ 'upgrade' if ss_chart_name in helm_list.stdout else 'install' }}"
+
+- name: Install or upgrade Security Server
+  command: >
+    helm {{ helm_action }} {{ ss_chart_name }}
+    {{ playbook_dir }}/helm-chart
+    --values {{ playbook_dir }}/helm-chart/values.yaml
+    --set-string security-server.serverId={{ ss_instance_id }}
+    --set-string security-server.adminUser={{ ss_ui_username }}
+    --set-string security-server.adminPassword={{ ss_ui_password }}
+    --set-string tldDomain={{ helm_tld_domain }}
+    --set-string bbDomain={{ ss_domain }}
+    --namespace {{ ss_namespace }}
+    --timeout {{ helm_timeout }}
+  register: helm_result
+  changed_when: "'STATUS: deployed' in helm_result.stdout or 'STATUS: pending-upgrade' in helm_result.stdout"
+
+- name: Wait for Security Server pod to be ready
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ ss_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/component=security-server"
+  register: ss_pods
+  until: ss_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length > 0
+  retries: 60
+  delay: 10
+
+- name: Include port-forward role for SS pod
+  include_role:
+    name: port_forward
+  when: ss_port_forward_enabled | default(true)
+
+- name: Display installation status
+  debug:
+    msg:
+      - "Security Server installation complete"
+      - "Chart: {{ ss_chart_name }}"
+      - "Namespace: {{ ss_namespace }}"
+      - "Pod: {{ ss_pods.resources[0].metadata.name }}"
+      - "Central Server: {{ cs_hostname }}"
+      - "Port-forward: {{ 'Enabled' if (ss_port_forward_enabled | default(true)) else 'Disabled' }}"
+      - "{{ 'Local URL: https://localhost:' + ss_port_forward_local_port | string if (ss_port_forward_enabled | default(true)) else '' }}"
+

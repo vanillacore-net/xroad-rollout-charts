@@ -1,0 +1,213 @@
+{{- if and (index .Values "test-ca" "persistence" "enabled") }}
+{{- range $name, $cfg := index .Values "test-ca" "persistence" }}
+{{- if ne $name "enabled" }}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pvc-{{ include "x-road-test-ca.fullnameWithId" $ }}-home
+  labels:
+    {{- include "x-road-test-ca.labels" $ | nindent 4 }}
+spec:
+  accessModes:
+    - {{ $cfg.accessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ required (printf "central-server.persistence.%s.size is required" $name) $cfg.size }}
+  {{- if hasKey $cfg "storageClassName" }}
+  storageClassName: {{- if $cfg.storageClassName }} {{ $cfg.storageClassName | quote }} {{- else }} "" {{- end }}
+  {{- end }}
+  {{- with $cfg.bind }}
+  {{- if .enabled }}
+    {{- if .volumeName }}
+  volumeName: {{ .volumeName | quote }}
+    {{- end }}
+    {{- if or .matchLabels .matchExpressions }}
+  selector:
+      {{- if .matchLabels }}
+      matchLabels:{{ toYaml .matchLabels | nindent 6 }}
+      {{- end }}
+      {{- if .matchExpressions }}
+      matchExpressions:{{ toYaml .matchExpressions | nindent 6 }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "x-road-test-ca.fullnameWithId" $ }}
+  labels:
+    {{- include "x-road-test-ca.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "x-road-test-ca.fullnameWithId" $ }}
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: {{ include "x-road-test-ca.fullnameWithId" $ }}
+        {{- include "x-road-test-ca.labels" $ | nindent 8 }}
+    spec:
+      containers:
+        - name: test-ca
+          image: "{{ index .Values "test-ca" "repository" }}:{{ index .Values "test-ca" "imageTag" }}"
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: "100m"
+              memory: {{ .Values.serverMem | default "128Mi" | quote }}
+            limits:
+              cpu: "400m"
+              memory: {{ .Values.serverMem | default "512Mi" | quote }}
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                - /bin/sh
+                - -c
+                - |
+                  sleep 20
+                  openssl x509 -in /home/ca/certs/ca.pem -noout -serial -dates
+                  # Convert ca.pem to test-ca.crt for other components
+                  if [ -f /home/ca/certs/ca.pem ] && [ ! -f /home/ca/certs/test-ca.crt ]; then
+                    echo "Converting ca.pem to test-ca.crt..."
+                    openssl x509 -outform der -in /home/ca/certs/ca.pem -out /home/ca/certs/test-ca.crt
+                    chmod 644 /home/ca/certs/test-ca.crt
+                    echo "test-ca.crt created successfully"
+                  fi
+          ports:
+          - containerPort: 8887
+            name: acme
+            protocol: TCP
+          - containerPort: 8888
+            name: ocsp
+            protocol: TCP
+          - containerPort: 8899
+            name: tsa
+            protocol: TCP
+          - containerPort: 9998
+            name: ca
+            protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            runAsUser: 0
+          terminationMessagePath: /dev/termination-log
+          volumeMounts:
+            - mountPath: /home/ca
+              name: shared-volume
+            - mountPath: /home/ca/CA/CA.cnf
+              name: ca-config
+              subPath: CA.cnf
+            - mountPath: /home/ca/CA/ocsp.py
+              name: ocsp-script
+              subPath: ocsp.py
+            - mountPath: /home/ca/CA/sign_req.sh
+              name: sign-req-script
+              subPath: sign_req.sh
+      {{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      {{- else }}
+      imagePullSecrets: []
+      {{- end }}
+      initContainers:
+        - name: init-ca
+          image: "{{ index .Values "test-ca" "repository" }}:{{ index .Values "test-ca" "imageTag" }}"
+          imagePullPolicy: Always
+          command:
+          - bash
+          - -c
+          args:
+          - |
+            set -euo pipefail
+            
+            echo "=== Test CA Init Container ==="
+
+            echo "--- Installing rsync..."
+            apt-get update && apt-get install -y rsync
+
+            echo "--- Listing shared volume before copy..."
+            find /shared-volume -type f -exec sha256sum {} \;
+
+            echo "--- Copying CA files to shared volume..."
+            rsync -av --ignore-existing --stats /home/ca/ /shared-volume/
+
+            echo "--- Convert ca.pem to crt (if exists) ---"
+            if [ -f /shared-volume/certs/ca.pem ]; then
+              openssl x509 -outform der -in /shared-volume/certs/ca.pem -out /shared-volume/certs/test-ca.crt
+              echo "--- Converted ca.pem to test-ca.crt"
+            else
+              echo "--- ca.pem not found yet (first run), will be created by main container"
+            fi
+
+            echo "--- Setting proper ownership..."
+            chown -R 1001:1001 /shared-volume
+
+            echo "--- Setting proper permissions..."
+            chmod -R 755 /shared-volume
+            
+            echo "--- Listing shared volume after copy..."
+            find /shared-volume -type f -exec sha256sum {} \;
+
+            echo "--- Init container completed successfully!"
+            sleep 5
+          volumeMounts:
+            - mountPath: /shared-volume
+              name: shared-volume
+      volumes:
+{{- if and (index .Values "test-ca" "persistence" "enabled") }}
+        - name: shared-volume
+          persistentVolumeClaim:
+            claimName: pvc-{{ include "x-road-test-ca.fullnameWithId" $ }}-home
+{{- else }}
+        - name: shared-volume
+          emptyDir: {}
+{{- end }}
+        - name: ca-config
+          configMap:
+            name: ca-config
+        - name: ocsp-script
+          configMap:
+            name: {{ include "x-road-test-ca.fullnameWithId" $ }}-ocsp-script
+        - name: sign-req-script
+          configMap:
+            name: {{ include "x-road-test-ca.fullnameWithId" $ }}-sign-req-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "x-road-test-ca.fullnameWithId" $ }}
+  labels:
+    {{- include "x-road-test-ca.labels" . | nindent 4 }}
+  {{- if (index .Values "test-ca" "Service" "annotations") }}
+  annotations:
+    {{- toYaml (index .Values "test-ca" "Service" "annotations") | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ index .Values "test-ca" "Service" "type" | default "LoadBalancer" }}
+  selector:
+    app: {{ include "x-road-test-ca.fullnameWithId" $ }}
+  ports:
+  - name: acme
+    protocol: TCP
+    port: 8887
+    targetPort: 8887
+  - name: ocsp
+    protocol: TCP
+    port: 8888
+    targetPort: 8888
+  - name: tsa
+    protocol: TCP
+    port: 8899
+    targetPort: 8899
+  - name: ca
+    protocol: TCP
+    port: 9998
+    targetPort: 9998

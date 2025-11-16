@@ -1,0 +1,63 @@
+---
+nameOverride: ""
+fullnameOverride: "mss"
+
+security-server:
+  serverId: "0"
+  repository: "niis/xroad-security-server-sidecar"
+  imageTag: "7.6.2"
+  initContainer:
+    repository: "ubuntu"
+    imageTag: "latest"
+  resources:
+    requests:
+      memory: 2Gi
+      cpu: 500m
+    limits:
+      memory: 4Gi
+      cpu: 2
+  persistence:
+    enabled: true
+    config:
+      size: 1Gi
+#      storageClassName: ""
+      bind:
+        enabled: false
+        volumeName: ""
+        matchLabels: {}
+        matchExpressions: []
+    lib:
+      size: 1Gi
+#      storageClassName: ""
+      bind:
+        enabled: false
+        volumeName: ""
+        matchLabels: {}
+        matchExpressions: []
+    dbdata:
+      size: 2Gi
+#      storageClassName: "" 
+      bind:
+        enabled: false
+        volumeName: ""
+        matchLabels: {}
+        matchExpressions: []
+  Ingress:
+    enabled: true
+    tldDomain: im.assembly.govstack.global
+    traefik:
+      enabled: false
+  Service:
+    type: ClusterIP  # ClusterIP - all external access via Ingress
+    annotations: {}
+
+# global:
+#   serviceExt:
+#     enabled: false
+#     topLevelDomainName: ""
+#     subnetAllowList: ""
+#     acmCertificateArn: ""
+
+# tokenPin: "1234" ???
+# dbStorage: "5Gi"
+# dbPersistency: false

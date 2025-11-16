@@ -1,0 +1,6 @@
+apiVersion: v2
+name: x-road-cs
+description: X-Road Central Server (CS) with postgres DB inside or outside
+type: application
+version: 1.0.0
+appVersion: "7.6.1"

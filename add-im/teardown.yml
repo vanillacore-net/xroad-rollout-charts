@@ -1,0 +1,19 @@
+---
+# X-Road Security Server Teardown Playbook
+# Uninstalls the Security Server and cleans up resources
+
+- name: Teardown X-Road Security Server
+  hosts: control_host
+  gather_facts: yes
+  vars:
+    # Override these variables as needed
+    # Note: ss_hostname, ss_instance_id, ss_namespace can be overridden via -e
+
+  tasks:
+    - name: Include teardown role
+      include_role:
+        name: teardown
+      tags:
+        - teardown
+        - all
+

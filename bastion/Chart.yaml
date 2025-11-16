@@ -1,0 +1,7 @@
+apiVersion: v2
+name: bastion
+description: A Helm chart for bastion pod with SSH access on port 22
+type: application
+version: 0.1.0
+appVersion: "1.0"
+

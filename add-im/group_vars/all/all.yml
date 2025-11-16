@@ -1,0 +1,64 @@
+# X-Road Security Server Installation Configuration
+
+# Central Server configuration
+# Note: CS and test-ca are not accessible via kubectl in standalone SS context
+cs_hostname: "conf.im.assembly.govstack.global"
+
+# Test CA configuration
+# Note: kubectl access to test-ca pod is not available in standalone SS context
+# All operations use HTTPS endpoints (ocsp/tsa/acme.im.assembly.govstack.global)
+testca_ocsp_url: "https://ocsp.im.assembly.govstack.global"
+testca_acme_url: "https://acme.im.assembly.govstack.global"
+testca_tsa_url: "https://tsa.im.assembly.govstack.global"
+
+# Security Server configuration
+# Use bb_domain from config.yml if available, otherwise default
+# Note: ss_hostname can be overridden via -e ss_hostname=value
+ss_domain: "{{ bb_domain | default('bb-im-second-cluster.assembly.govstack.global') }}"
+ss_hostname: "ss.{{ ss_domain }}"
+# Note: ss_instance_id can be overridden via -e ss_instance_id=value
+ss_instance_id: "0"
+ss_namespace: "im-ns"
+ss_chart_name: "xroad-ss{{ ss_instance_id }}"
+# Helm values
+# Note: helm_tld_domain can be overridden via -e helm_tld_domain=value
+helm_tld_domain: "{{ ss_domain }}"
+# SS pod port-forward configuration
+ss_port_forward_enabled: false  # Temporarily disabled to use Ingress
+ss_port_forward_local_port: 4000  # Local port for SS UI
+ss_port_forward_remote_port: 4000  # Remote port in SS pod
+# Ingress configuration (temporarily enabled for testing)
+ss_ingress_enabled: true  # Use Ingress instead of port-forward
+ss_ingress_hostname: "ss-ui.{{ helm_tld_domain }}"  # Ingress FQDN
+
+# Certificate configuration
+cert_dir: "{{ playbook_dir }}/certs"
+cert_validity_days: 7300
+
+# Helm configuration
+helm_timeout: "15m"
+
+# Port forwarding configuration
+port_forward_timeout: 300  # seconds
+
+# Security Server Configuration
+ss_ui_username: "{{ secret_ss_ui_username }}"
+ss_ui_password: "{{ secret_ss_ui_password }}"  # Default password (override via -e ss_ui_password=your_password)
+ss_token_pin: "{{ secret_ss_token_pin }}"  # Must be provided via -e or secret
+# Use bb_member from config.yml if available, otherwise defaults
+ss_owner_member_class: "{{ bb_member.class | default('GOV') }}"
+ss_owner_member_code: "{{ bb_member.code | default('unknown') | string }}"
+ss_security_server_code: "{{ bb_member.server.code }}"
+# Use bb_member.cert from config.yml if available, otherwise defaults
+ss_cert_country: "{{ bb_member.cert.C | default('EU') }}"
+ss_cert_organization: "{{ bb_member.cert.O | default(bb_member.name | default('GovStack Member')) }}"
+# Configuration anchor (if CS is not accessible, provide this variable)
+gconf_anchor: ""  # Leave empty to fetch from CS
+cs_xsrf_token: ""  # Required if fetching anchor from CS
+
+# Teardown configuration
+teardown_delete_all: true  # Set to false to keep namespace (default: true - deletes namespace and all resources)
+teardown_delete_pvcs: false  # Set to true to delete PVCs (only used when teardown_delete_all is false)
+teardown_delete_secrets: false  # Set to true to delete secrets (only used when teardown_delete_all is false)
+
+

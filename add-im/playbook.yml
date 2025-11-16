@@ -1,0 +1,29 @@
+---
+# X-Road Security Server Installation Playbook
+# Converts standalone SS installation scripts to Ansible
+# Uses test-ca pod via kubectl port-forward for certificate signing
+
+- name: Install X-Road Security Server
+  hosts: control_host
+  gather_facts: yes
+  vars:
+    # Override these variables as needed
+    # Note: ss_hostname, ss_instance_id, ss_namespace can be overridden via -e
+
+  tasks:
+    - name: Include installation role
+      include_role:
+        name: installation
+      tags:
+        - installation
+        - all
+      when: install_ss | default(true)
+
+    - name: Include SS configuration role
+      include_role:
+        name: configure
+      tags:
+        - configure
+        - all
+      when: configure_ss | default(true)
+

@@ -1,0 +1,22 @@
+external:
+http:80 -> cs 80 (conf)
+https:443 -> cs https:443 (conf)
+https:4001 -> cs https:4001 passtrough (AUTH cert req request)
+https:4000 -> cs https:4000 (UI)
+https:4040 -> ss0 https:4000 (UI)
+https:5500 -> ss0 https:5500 passtrough (msg)
+https:5577 -> ss0 https:5577 passtrough (OCSP resp)
+https:8887 -> ca https:8887 (acme)
+https:8888 -> ca https:8888 (ocsp)
+https:8899 -> ca https:8899 (tsa)
+https:9998 -> ca https:9998 (ca)
+
+internal:
+ss0 http: -> cs 80 (conf)
+ss0 https: -> cs https:443 (conf)
+ss0 https: -> cs https:4001 passtrough (AUTH cert req request)
+ss0 https: -> cs https:4002 passtrough (AUTH cert req request)
+ss0 https:8888 -> ca https:8888 (ocsp)
+ss0 https:8899 -> ca https:8899 (tsa)
+cs https:8888 -> ca https:8888 (ocsp)
+cs https:8899 -> ca https:8899 (tsa)

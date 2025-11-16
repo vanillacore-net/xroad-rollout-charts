@@ -1,0 +1,7 @@
+# Secrets file contains sensitive SSH keys
+secrets.yaml
+
+# Helm charts
+charts/
+*.tgz
+

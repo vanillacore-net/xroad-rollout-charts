@@ -1,0 +1,54 @@
+apiVersion: v1
+data:
+  is_rest_1.json: |
+    {
+      "request": {
+        "method": "POST",
+        "url": "/integration/mock_1"
+      },
+      "response": {
+        "status": 200,
+        "body": "{\"message\": \"Hallo vom X-Road Schleswig-Holstein POST-Endpunkt!\", \"requestBody\": {{`{{request.body}}`}} }",
+        "headers": {
+          "Content-Type": "application/json",
+          "mock-response": "true"
+        },
+        "transformers": ["response-template"]
+      }
+    }
+  is_rest_2.json: |
+    {
+      "request": {
+        "method": "PUT",
+        "url": "/integration/mock_1"
+      },
+      "response": {
+        "status": 201,
+        "body": "{\"message\": \"Hallo vom X-Road Schleswig-Holstein PUT-Endpunkt!\", \"request\": {{`{{request.body}}`}} }",
+        "headers": {
+          "Content-Type": "application/json",
+          "mock-response": "true"
+        },
+        "transformers": ["response-template"]
+      }
+    }
+  is_rest_3.json: |
+    {
+      "request": {
+        "method": "GET",
+        "url": "/integration/mock_1"
+      },
+      "response": {
+        "status": 200,
+        "body": "{\"message\": \"Willkommen bei X-Road Schleswig-Holstein!\" }",
+        "headers": {
+          "Content-Type": "application/json",
+          "mock-response": "true"
+        }
+      }
+    }
+kind: ConfigMap
+metadata:
+  labels:
+    io.kompose.service: isrest
+  name: isrest-cm0

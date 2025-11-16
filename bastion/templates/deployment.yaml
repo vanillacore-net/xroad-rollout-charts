@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bastion.fullname" . }}
+  labels:
+    {{- include "bastion.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "bastion.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bastion.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: bastion
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        workingDir: /root
+        ports:
+        - name: ssh
+          containerPort: 22
+          protocol: TCP
+        {{- if or .Values.ssh.authorizedKeys .Values.ssh.authorizedKeysSecret }}
+        env:
+        - name: SSH_AUTHORIZED_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: {{ if .Values.ssh.authorizedKeysSecret }}{{ .Values.ssh.authorizedKeysSecret }}{{ else }}{{ include "bastion.fullname" . }}-ssh-keys{{ end }}
+              key: authorized_keys
+              optional: true
+        {{- end }}
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          
+          echo "=== Bastion Pod Initialization ==="
+          
+          # Update package lists
+          apt-get update
+          
+          # Install packages
+          echo "Installing packages..."
+          DEBIAN_FRONTEND=noninteractive apt-get install -y {{ range .Values.packages }}{{ . }} {{ end }}
+          
+          # Configure SSH
+          echo "Configuring SSH..."
+          mkdir -p /var/run/sshd
+          {{- if .Values.persistence.enabled }}
+          # With persistent storage, ensure directories exist
+          mkdir -p /root/.ssh /root/.ansible /root/.cache /root/bin
+          chmod 700 /root/.ssh
+          {{- else }}
+          mkdir -p /root/.ssh
+          chmod 700 /root/.ssh
+          {{- end }}
+          
+          # Setup authorized_keys
+          if [ -n "${SSH_AUTHORIZED_KEYS:-}" ] && [ -f /root/.ssh/authorized_keys ]; then
+            # Both environment variable and persistent file exist - merge them
+            echo "Both SSH_AUTHORIZED_KEYS and persistent authorized_keys exist - merging"
+            SSH_KEYS_FROM_ENV=$(echo "${SSH_AUTHORIZED_KEYS}" | base64 -d 2>/dev/null || echo "${SSH_AUTHORIZED_KEYS}")
+            # Append env keys to existing file (avoid duplicates)
+            echo "$SSH_KEYS_FROM_ENV" >> /root/.ssh/authorized_keys
+            # Remove duplicate lines while preserving order
+            awk '!seen[$0]++' /root/.ssh/authorized_keys > /root/.ssh/authorized_keys.tmp
+            mv /root/.ssh/authorized_keys.tmp /root/.ssh/authorized_keys
+            chmod 600 /root/.ssh/authorized_keys
+            echo "SSH authorized keys merged"
+          elif [ -n "${SSH_AUTHORIZED_KEYS:-}" ]; then
+            # Only environment variable exists - use it
+            echo "${SSH_AUTHORIZED_KEYS}" | base64 -d > /root/.ssh/authorized_keys 2>/dev/null || echo "${SSH_AUTHORIZED_KEYS}" > /root/.ssh/authorized_keys
+            chmod 600 /root/.ssh/authorized_keys
+            echo "SSH authorized keys configured from environment"
+          elif [ ! -f /root/.ssh/authorized_keys ]; then
+            echo "No SSH authorized keys provided - password authentication may be required"
+          else
+            echo "Using existing SSH authorized keys from persistent storage"
+          fi
+          
+          # Generate SSH host keys if they don't exist
+          if [ ! -f /etc/ssh/ssh_host_rsa_key ]; then
+            ssh-keygen -A
+          fi
+          
+          # Configure SSH to allow root login
+          sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+          sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+          sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config || true
+          
+          # Start SSH daemon
+          echo "Starting SSH daemon..."
+          exec /usr/sbin/sshd -D -e
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        volumeMounts:
+        - name: ssh-host-keys
+          mountPath: /etc/ssh
+          readOnly: false
+        {{- if .Values.persistence.enabled }}
+        - name: bastion-data
+          mountPath: /root
+        {{- end }}
+      volumes:
+      - name: ssh-host-keys
+        {{- if .Values.ssh.hostKeySecret }}
+        secret:
+          secretName: {{ .Values.ssh.hostKeySecret }}
+        {{- else if .Values.persistence.enabled }}
+        emptyDir: {}
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      {{- if .Values.persistence.enabled }}
+      - name: bastion-data
+        persistentVolumeClaim:
+          claimName: {{ include "bastion.fullname" . }}-data
+      {{- end }}
+

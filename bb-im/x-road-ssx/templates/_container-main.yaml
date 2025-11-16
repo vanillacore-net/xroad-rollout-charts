@@ -1,0 +1,95 @@
+{{/*
+Main Security Server container definition
+*/}}
+{{- define "x-road-ssx.container.main" -}}
+- name: xroad-security-server
+  image: "{{ index .Values "security-server" "repository" }}:{{ index .Values "security-server" "imageTag" }}"
+  imagePullPolicy: Always
+  resources:
+    requests:
+      memory: {{ index .Values "security-server" "resources" "requests" "memory" | default "2Gi" | quote }}
+      cpu: {{ index .Values "security-server" "resources" "requests" "cpu" | default "500m" | quote }}
+    limits:
+      memory: {{  index .Values "security-server" "resources" "limits" "memory" | default "4Gi" | quote }}
+      cpu: {{  index .Values "security-server" "resources" "limits" "cpu" | default "2" | quote }}
+  env:
+    - name: XROAD_TOKEN_PIN
+      valueFrom:
+        secretKeyRef:
+          name: {{ include "x-road-ssx.fullnameWithId" . }}
+          key: tokenPin
+    - name: XROAD_ADMIN_USER
+      value: "xrd"
+    - name: XROAD_ADMIN_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ include "x-road-ssx.fullnameWithId" . }}
+          key: password
+    # We are going to disable external DB for a Demo
+    # - name: XROAD_DB_HOST
+    #   value: "xroad-ss-db"
+    # - name: XROAD_DB_PORT
+    #   value: "5432"
+    # - name: XROAD_DB_PWD
+    #   value: "secret"
+    - name: XROAD_LOG_LEVEL
+      value: "INFO"
+    # Java truststore settings for HTTPS configuration downloads
+    # Use JVM arguments via XROAD_PARAMS (more reliable than env vars for some Java apps)
+    - name: XROAD_PARAMS
+      value: "-Djavax.net.ssl.trustStore=/shared-truststore/cacerts -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=JKS"
+    # Also set as environment variables (some Java code checks these)
+    - name: JAVAX_NET_SSL_TRUSTSTORE
+      value: "/shared-truststore/cacerts"
+    - name: JAVAX_NET_SSL_TRUSTSTOREPASSWORD
+      value: "changeit"
+    - name: JAVAX_NET_SSL_TRUSTSTORETYPE
+      value: "JKS"
+  ports:
+#             - containerPort: 2080
+#               name: proxy-http
+    - containerPort: 4000
+      name: admin-ui
+    - containerPort: 5500
+      name: messaging
+    - containerPort: 5577
+      name: ocsp
+    - containerPort: 5588
+      name: proxy-ui
+    - containerPort: 8080
+      name: proxy-http
+    - containerPort: 8443
+      name: proxy-https
+  livenessProbe:
+    tcpSocket:
+      port: 5500
+    failureThreshold: 2
+    periodSeconds: 60
+  startupProbe:
+    tcpSocket:
+      port: 4000
+    failureThreshold: 90
+    periodSeconds: 20
+    initialDelaySeconds: 60
+  # Temporary disable for standalone SS deployment
+  # startupProbe:
+  #   # Note! This probe assumes a pre-configured server
+  #   # uninitialized server would report failure until
+  #   # configured
+  #   httpGet:
+  #     path: /
+  #     port: 5588
+  #   failureThreshold: 90
+  #   periodSeconds: 20
+  volumeMounts:
+    - mountPath: /etc/xroad
+      name: xroad-config
+    - mountPath: /var/lib/xroad
+      name: xroad-lib
+    - mountPath: /var/lib/postgresql
+      name: xroad-dbdata
+    - mountPath: /shared-truststore
+      name: shared-truststore
+      readOnly: true
+{{- end }}
+

@@ -1,0 +1,53 @@
+---
+nameOverride: ""
+fullnameOverride: "ss"
+
+# Top-level domain for this cluster
+# Note: This value is typically overridden by Ansible via --set-string tldDomain={{ helm_tld_domain }}
+# Default value kept here as fallback
+tldDomain: "bb-im-second-cluster.assembly.govstack.global"
+# Note: This value is typically overridden by Ansible via --set-string bbDomain={{ ss_domain }}
+# Default value kept here as fallback
+bbDomain: "bb-im-second-cluster.assembly.govstack.global"
+
+security-server:
+  serverId: "0"
+  repository: "niis/xroad-security-server-sidecar"
+  imageTag: "7.6.2"
+  # Admin UI credentials (typically overridden by Ansible from group_vars/all.yml)
+  adminUser: "xrd"
+  adminPassword: ""  # If empty, will use secret; otherwise will be set directly
+  initContainer:
+    repository: "ubuntu"
+    imageTag: "latest"
+  resources:
+    requests:
+      memory: 2Gi
+      cpu: 500m
+    limits:
+      memory: 4Gi
+      cpu: 2
+  persistence:
+    enabled: true
+    config:
+      size: 1Gi
+      # storageClassName: ""  # Commented out to use default storage class
+    lib:
+      size: 1Gi
+      # storageClassName: ""  # Commented out to use default storage class
+    dbdata:
+      size: 2Gi
+      # storageClassName: ""  # Commented out to use default storage class
+  Ingress:
+    enabled: true  # Temporarily enabled for testing
+    # tldDomain is inherited from top-level tldDomain variable
+    traefik:
+      enabled: false
+  Service:
+    type: ClusterIP
+    annotations: {}
+
+# Central Server configuration
+central-server:
+  hostname: "conf.im.assembly.govstack.global"
+

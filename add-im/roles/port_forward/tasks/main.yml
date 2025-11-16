@@ -1,0 +1,68 @@
+---
+# Port-forward management for Security Server pod
+
+- name: Find Security Server pod
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ ss_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/component=security-server"
+  register: ss_pods
+  until: ss_pods.resources | length > 0
+  retries: 30
+  delay: 10
+
+- name: Set SS pod name
+  set_fact:
+    ss_pod_name: "{{ ss_pods.resources[0].metadata.name }}"
+
+- name: Stop any existing kubectl port-forward for Security Server pod
+  kubectl_port_forward:
+    namespace: "{{ ss_namespace }}"
+    pod: "{{ ss_pod_name }}"
+    local_port: "{{ ss_port_forward_local_port }}"
+    remote_port: "{{ ss_port_forward_remote_port }}"
+    state: stopped
+    timeout: "{{ port_forward_timeout }}"
+    pid_file: "{{ cert_dir }}/.ss-port-forward.pid"
+  ignore_errors: yes
+  when: ss_port_forward_enabled | default(true)
+
+- name: Kill any process using port-forward local port (fallback cleanup)
+  shell: |
+    PIDS=$(lsof -ti:{{ ss_port_forward_local_port }} 2>/dev/null || true)
+    if [ -n "$PIDS" ]; then
+      echo "$PIDS" | xargs kill -9 2>/dev/null || true
+    fi
+  ignore_errors: yes
+  when: ss_port_forward_enabled | default(true)
+
+- name: Start kubectl port-forward for Security Server pod
+  kubectl_port_forward:
+    namespace: "{{ ss_namespace }}"
+    pod: "{{ ss_pod_name }}"
+    local_port: "{{ ss_port_forward_local_port }}"
+    remote_port: "{{ ss_port_forward_remote_port }}"
+    state: started
+    timeout: "{{ port_forward_timeout }}"
+    pid_file: "{{ cert_dir }}/.ss-port-forward.pid"
+  register: ss_port_forward_result
+  when: ss_port_forward_enabled | default(true)
+
+- name: Wait for SS port-forward to be ready
+  wait_for:
+    host: localhost
+    port: "{{ ss_port_forward_local_port }}"
+    delay: 2
+    timeout: 10
+  when: ss_port_forward_enabled | default(true) and ss_port_forward_result.changed | default(false)
+
+- name: Display SS port-forward information
+  debug:
+    msg:
+      - "Security Server port-forward established"
+      - "Local: https://localhost:{{ ss_port_forward_local_port }}"
+      - "Remote: {{ ss_pod_name }}:{{ ss_port_forward_remote_port }}"
+      - "PID: {{ ss_port_forward_result.pid }}"
+  when: ss_port_forward_enabled | default(true) and ss_port_forward_result.changed | default(false)
+

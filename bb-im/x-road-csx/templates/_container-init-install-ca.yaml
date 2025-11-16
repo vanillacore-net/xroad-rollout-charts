@@ -1,0 +1,108 @@
+{{/*
+Init container for installing CA certificate
+*/}}
+{{- define "x-road-csx.container.init.installCa" -}}
+- name: install-ca
+  image: eclipse-temurin:21-jdk
+  command:
+    - /bin/bash
+    - -c
+  args:
+    - |
+      set -e
+      echo "=== Installing Test CA Certificate ==="
+
+      # Install necessary packages
+      apt-get update && apt-get install -y ca-certificates
+
+      # Convert ca.pem to test-ca.crt (DER format)
+      echo "Converting ca.pem to test-ca.crt..."
+      # Write to /tmp first (read-only mount issue fix)
+      openssl x509 -outform der -in /etc/ssl/test-ca/ca.pem -out /tmp/test-ca.crt
+
+      # Copy CA certificate to system trust store
+      cp /tmp/test-ca.crt /usr/local/share/ca-certificates/test-ca.crt
+      update-ca-certificates
+
+      # Copy the Java truststore from this container and add test CA
+      # Find Java home and truststore (works for eclipse-temurin and openjdk)
+      # Try common Java locations
+      if [ -n "${JAVA_HOME:-}" ]; then
+        TRUSTSTORE_PATH="${JAVA_HOME}/lib/security/cacerts"
+      elif [ -d /opt/java/openjdk ]; then
+        TRUSTSTORE_PATH="/opt/java/openjdk/lib/security/cacerts"
+      elif [ -d /usr/lib/jvm ]; then
+        # Find the first JDK in /usr/lib/jvm
+        JAVA_DIR=$(find /usr/lib/jvm -maxdepth 1 -type d | head -1)
+        TRUSTSTORE_PATH="${JAVA_DIR}/lib/security/cacerts"
+      else
+        # Use java command to find JAVA_HOME
+        JAVA_BIN=$(which java 2>/dev/null || echo "/usr/bin/java")
+        if [ -f "$JAVA_BIN" ]; then
+          JAVA_BIN=$(readlink -f "$JAVA_BIN" 2>/dev/null || echo "$JAVA_BIN")
+          JAVA_HOME=$(dirname $(dirname "$JAVA_BIN"))
+          TRUSTSTORE_PATH="${JAVA_HOME}/lib/security/cacerts"
+        else
+          # Last resort: search for cacerts
+          TRUSTSTORE_PATH=$(find /opt /usr -name "cacerts" -type f 2>/dev/null | head -1)
+        fi
+      fi
+
+      echo "Looking for truststore at: ${TRUSTSTORE_PATH}"
+      if [ ! -f "${TRUSTSTORE_PATH}" ]; then
+        echo "Truststore not found at ${TRUSTSTORE_PATH}, searching..."
+        TRUSTSTORE_PATH=$(find /opt /usr -name "cacerts" -type f 2>/dev/null | head -1)
+        if [ -z "${TRUSTSTORE_PATH}" ] || [ ! -f "${TRUSTSTORE_PATH}" ]; then
+          echo "ERROR: Could not find Java truststore (cacerts)"
+          exit 1
+        fi
+        echo "Found truststore at: ${TRUSTSTORE_PATH}"
+      fi
+
+      mkdir -p /shared-truststore
+      cp "${TRUSTSTORE_PATH}" /shared-truststore/cacerts
+      echo "Successfully copied truststore from ${TRUSTSTORE_PATH}"
+
+      # Add test CA certificate to the copied truststore
+      echo "Installing test CA certificate into truststore"
+      # Remove existing test-ca alias if it exists
+      keytool -delete -alias test-ca -keystore /shared-truststore/cacerts -storepass changeit -noprompt 2>/dev/null || true
+      keytool -delete -alias testca -keystore /shared-truststore/cacerts -storepass changeit -noprompt 2>/dev/null || true
+      # Import the test CA certificate
+      keytool -import -trustcacerts -alias test-ca -file /tmp/test-ca.crt -keystore /shared-truststore/cacerts -storepass changeit -noprompt
+      echo "Test CA certificate imported successfully"
+
+      # Set proper permissions
+      chmod 644 /shared-truststore/cacerts
+
+      # Verify the certificate was imported
+      echo "Verifying test CA certificate import:"
+      keytool -list -alias test-ca -keystore /shared-truststore/cacerts -storepass changeit -noprompt
+
+      # Create Java system properties file for all Java processes
+      echo "Creating Java system properties for truststore"
+      mkdir -p /shared-truststore
+      cat > /shared-truststore/java.security.properties << 'PROPEOF'
+      javax.net.ssl.trustStore=/shared-truststore/cacerts
+      javax.net.ssl.trustStorePassword=changeit
+      javax.net.ssl.trustStoreType=JKS
+      PROPEOF
+
+      # Create environment file for system-wide Java settings
+      cat > /shared-truststore/java-truststore.env << 'ENVEOF'
+      export JAVAX_NET_SSL_TRUSTSTORE=/shared-truststore/cacerts
+      export JAVAX_NET_SSL_TRUSTSTOREPASSWORD=changeit
+      export JAVAX_NET_SSL_TRUSTSTORETYPE=JKS
+      export JAVA_OPTS="$JAVA_OPTS -Djavax.net.ssl.trustStore=/shared-truststore/cacerts -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=JKS"
+      ENVEOF
+      chmod 644 /shared-truststore/java-truststore.env
+
+      echo "=== CA certificate installation completed ==="
+  volumeMounts:
+    - mountPath: /etc/ssl/test-ca
+      name: test-ca-cert
+      readOnly: true
+    - mountPath: /shared-truststore
+      name: shared-truststore
+{{- end }}
+

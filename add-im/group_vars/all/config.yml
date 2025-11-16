@@ -1,0 +1,24 @@
+---
+govstack_tld_domain: govstack.global
+govstack_instance: assembly
+
+bb_cluster: bb-im-second-cluster
+bb_domain: "{{ bb_cluster }}.{{ govstack_instance }}.{{ govstack_tld_domain }}"
+
+bb_member:
+  name: Information Mediator Central BB
+  class: GOV
+  code: im-cs
+  server:
+    code: SS-{{ bb_cluster }}
+  cert:
+    C: EE
+    O: "{{ bb_member.name }}"
+  subsystems:
+  - name: MANAGEMENT
+    connection: HTTP
+    cert: b64
+    services:
+    - name: clientReg
+      openapi_url: openapi.{{ bb_domain }}
+      service_url: api.{{ bb_domain }}

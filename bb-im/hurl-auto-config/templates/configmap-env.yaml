@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hurl-env
+  labels:
+    {{- include "x-road-ssx.labels" . | nindent 4 }}
+data:
+  cs_host: {{ .Values.cs_host | default "cs.im.assembly.govstack.global" }}
+  cs_conf_host: {{ .Values.cs_conf_host | default "conf.im.assembly.govstack.global" }}
+  ca_host: {{ .Values.ca_host | default "ca.test-ca.svc.cluster.local" }}
+  ca_ocsp_host: {{ .Values.ca_ocsp_host | default "ocsp.im.assembly.govstack.global" }}
+  ca_ocsp_port: {{ .Values.ca_ocsp_port | default "443" }}
+  ca_acme_host: {{ .Values.ca_acme_host | default "acme.im.assembly.govstack.global" }}
+  ca_acme_port: {{ .Values.ca_acme_port | default "443" }}
+  ca_tsa_host: {{ .Values.ca_tsa_host | default "tsa.im.assembly.govstack.global" }}
+  ca_tsa_port: {{ .Values.ca_tsa_port | default "443" }}
+  ss0_host: {{ .Values.ss0_host | default "mss.im.assembly.govstack.global" }}
+  ss1_host: {{ .Values.ss1_host | default "ss1.im.assembly.govstack.global" }}
+  example_service_wsdl: {{ .Values.example_service_wsdl | default "http://issoap:8080/example-adapter/Endpoint?wsdl" }}
+  example_service_address: {{ .Values.example_service_address | default "http://issoap:8080/example-adapter/Endpoint" }}
+  is_rest_url: {{ .Values.is_rest_url | default "http://isrest:8080/integration/mock_1" }}
+  is_rest_service_code: {{ .Values.is_rest_service_code | default "mock1" }}
+  is_openapi_url: {{ .Values.is_openapi_url | default "http://isopenapi:8080/v3/api-docs" }}
+  is_openapi_service_code: {{ .Values.is_openapi_service_code | default "restapi" }}
+
+
+
+

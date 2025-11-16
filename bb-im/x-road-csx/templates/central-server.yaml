@@ -1,0 +1,340 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "x-road-csx.fullnameWithId" $ }}-nginx-config
+  labels:
+    {{- include "x-road-csx.labels" $ | nindent 4 }}
+data:
+  xroad-public.conf: |
+    # extract version number from "version" query parameter
+    map $args $version {
+            default                         "2";
+            "~(^|&)version=(?P<V>\d+)(&|$)" $V;
+    }
+
+    access_log /var/log/nginx/localhost.access.log;
+
+    server {
+            root /var/lib/xroad/public;
+            listen 80;
+            listen [::]:80;
+
+            location ~ ^/(internal|external)conf$ {
+                    try_files /V$version$uri =404;
+                    expires -1;
+            }
+
+            # Serve individual configuration files
+            location ~ ^/V[0-9]+/ {
+                    try_files $uri =404;
+                    expires -1;
+            }
+    }
+
+    server {
+            listen 443 ssl;
+            listen [::]:443 ssl;
+            root /var/lib/xroad/public;
+            ssl_certificate /etc/xroad/ssl/global-conf.crt;
+            ssl_certificate_key /etc/xroad/ssl/global-conf.key;
+
+            location ~ ^/(internal|external)conf$ {
+                    try_files /V$version$uri =404;
+                    expires -1;
+            }
+
+            # Serve individual configuration files
+            location ~ ^/V[0-9]+/ {
+                    try_files $uri =404;
+                    expires -1;
+            }
+    }
+---
+{{- if and (index .Values "central-server" "persistence" "enabled") }}
+{{- range $name, $cfg := index .Values "central-server" "persistence" }}
+{{- if and (ne $name "enabled") (or (ne $name "dbdata") (not (index $.Values "postgres" "enabled"))) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-{{ include "x-road-csx.fullnameWithId" $ }}-{{ $name }}
+  labels:
+    {{- include "x-road-csx.labels" $ | nindent 4 }}
+spec:
+  accessModes:
+    - {{ $cfg.accessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ required (printf "central-server.persistence.%s.size is required" $name) $cfg.size }}
+  {{- if hasKey $cfg "storageClassName" }}
+  storageClassName: {{- if $cfg.storageClassName }} {{ $cfg.storageClassName | quote }} {{- else }} "" {{- end }}
+  {{- end }}
+  {{- with $cfg.bind }}
+  {{- if .enabled }}
+    {{- if .volumeName }}
+  volumeName: {{ .volumeName | quote }}
+    {{- end }}
+    {{- if or .matchLabels .matchExpressions }}
+  selector:
+      {{- if .matchLabels }}
+    matchLabels:{{ toYaml .matchLabels | nindent 6 }}
+      {{- end }}
+      {{- if .matchExpressions }}
+    matchExpressions:{{ toYaml .matchExpressions | nindent 6 }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "x-road-csx.fullnameWithId" $ }}
+  labels:
+    {{- include "x-road-csx.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "x-road-csx.fullnameWithId" $ }}
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: {{ include "x-road-csx.fullnameWithId" $ }}
+        {{- include "x-road-csx.labels" $ | nindent 8 }}
+    spec:
+      containers:
+{{ include "x-road-csx.container.main" . | indent 8 }}
+      initContainers:
+{{ include "x-road-csx.container.init.copyConfig" . | indent 8 }}
+{{ include "x-road-csx.container.init.initDb" . | indent 8 }}
+{{ include "x-road-csx.container.init.setPassword" . | indent 8 }}
+{{ include "x-road-csx.container.init.installCa" . | indent 8 }}
+
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: {{ include "x-road-csx.fullnameWithId" $ }}-nginx-config
+{{- if and (index .Values "central-server" "persistence" "enabled") }}
+        - name: xroad-config
+          persistentVolumeClaim:
+            claimName: pvc-{{ include "x-road-csx.fullnameWithId" $ }}-config
+        - name: xroad-lib
+          persistentVolumeClaim:
+            claimName: pvc-{{ include "x-road-csx.fullnameWithId" $ }}-lib
+        {{- if not (index .Values "postgres" "enabled") }}
+        - name: xroad-dbdata
+          persistentVolumeClaim:
+            claimName: pvc-{{ include "x-road-csx.fullnameWithId" $ }}-dbdata
+        {{- end }}
+{{- end }}
+        # Admin certificate secret???
+        - name: admin-cert
+          secret:
+            secretName: {{ include "x-road-csx.fullnameWithId" $ }}-cert
+        - name: test-ca-cert
+          secret:
+            secretName: test-ca-trust
+        - name: shared-truststore
+          emptyDir: {}
+  strategy:
+    type: Recreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "x-road-csx.fullnameWithId" $ }}
+  labels:
+    {{- include "x-road-csx.labels" . | nindent 4 }}
+  {{- if (index .Values "central-server" "Service" "annotations") }}
+  annotations:
+    {{- toYaml (index .Values "central-server" "Service" "annotations") | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ index .Values "central-server" "Service" "type" | default "ClusterIP" }}
+  {{- if eq (index .Values "central-server" "Service" "type" | default "ClusterIP") "LoadBalancer" }}
+  # LoadBalancer exposes all ports externally, including port 4001 for registration service
+  {{- end }}
+  selector:
+    app: {{ include "x-road-csx.fullnameWithId" $ }}
+  ports:
+    - port: 80
+      protocol: TCP
+      name: tcp-80
+    - port: 443
+      protocol: TCP
+      name: tcp-443
+    - port: 4000
+      protocol: TCP
+      name: admin
+      # For AWS NLB: external port 4000 maps to service port 4000
+    - port: 4001
+      protocol: TCP
+      name: register
+    # Port 4002 is internal only (not exposed externally per routes.txt)
+    # - port: 4002
+    #   protocol: TCP
+    #   name: management
+
+    # Not used in PRD grade images, like niis/xroad-central-server:noble-7.6.1
+    #- port: 8888
+    #  protocol: TCP
+    #  name: ocsp
+    #- port: 8899
+    #  protocol: TCP
+    #  name: tsa
+    #- port: 9998
+    #  protocol: TCP
+    #  name: ca
+---
+{{- if and (index .Values "central-server" "Ingress" "enabled") }}
+# Ingress for conf.im.assembly.govstack.global - Configuration HTTP endpoint (port 80 → backend 80)
+# This allows MSS to download configuration via HTTP without redirect (bypass gateway routing)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "x-road-csx.fullnameWithId" $ }}-config-http
+  annotations:
+    # Disable redirect to HTTPS for configuration endpoint
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    # Timeout settings
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: conf.{{ index .Values "central-server" "Ingress" "tldDomain" }}
+      http:
+        paths:
+          # Serve individual configuration files (e.g., /V4/.../shared-params.xml)
+          # Note: /internalconf and /externalconf are only exposed via HTTPS
+          - path: /V2/
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "x-road-csx.fullnameWithId" $ }}
+                port:
+                  number: 80
+          - path: /V3/
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "x-road-csx.fullnameWithId" $ }}
+                port:
+                  number: 80
+          - path: /V4/
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "x-road-csx.fullnameWithId" $ }}
+                port:
+                  number: 80
+# HTTPS Ingress for conf.im.assembly.govstack.global - Configuration HTTPS endpoint (port 443 → backend 80)
+# Only /internalconf and /externalconf are exposed via HTTPS to avoid interfering with HTTP downloads
+# Note: TLS terminates at Ingress controller, then proxies to backend HTTP port 80
+# SSL passthrough doesn't work with path-based routing, so we terminate TLS at Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "x-road-csx.fullnameWithId" $ }}-config-https
+  annotations:
+    # TLS termination at Ingress, proxy to HTTP backend
+    # Use cert-manager to automatically obtain Let's Encrypt certificate
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - conf.{{ index .Values "central-server" "Ingress" "tldDomain" }}
+      secretName: {{ include "x-road-csx.fullnameWithId" $ }}-config-https-tls
+  rules:
+    - host: conf.{{ index .Values "central-server" "Ingress" "tldDomain" }}
+      http:
+        paths:
+          - path: /internalconf
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "x-road-csx.fullnameWithId" $ }}
+                port:
+                  number: 80
+          - path: /externalconf
+            pathType: Exact
+            backend:
+              service:
+                name: {{ include "x-road-csx.fullnameWithId" $ }}
+                port:
+                  number: 80
+---
+# X-Road Central Server Administration Port LoadBalancer Service
+# Exposes port 4000 (admin interface) via MetalLB
+apiVersion: v1
+kind: Service
+metadata:
+  name: xroad-cs-admin-lb
+  namespace: im-ns
+  labels:
+    app.kubernetes.io/name: xroad-central-server
+    app.kubernetes.io/component: central-server
+    app.kubernetes.io/part-of: x-road-information-mediator
+    govstack.im/port-type: admin
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.0.0.100
+    metallb.universe.tf/allow-shared-ip: "cluster-shared"
+    govstack.im/port-description: "X-Road Central Server administration interface"
+    govstack.im/external-port: "4000"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - name: admin
+      protocol: TCP
+      port: 4000
+      targetPort: 4000
+  selector:
+    app.kubernetes.io/name: xroad-central-server
+    app.kubernetes.io/component: central-server
+---
+# X-Road Central Server Registration Port LoadBalancer Service
+# Exposes port 4001 (admin interface) via MetalLB
+apiVersion: v1
+kind: Service
+metadata:
+  name: xroad-cs-reg-lb
+  namespace: im-ns
+  labels:
+    app.kubernetes.io/name: xroad-central-server
+    app.kubernetes.io/component: central-server
+    app.kubernetes.io/part-of: x-road-information-mediator
+    govstack.im/port-type: reg
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.0.0.100
+    metallb.universe.tf/allow-shared-ip: "cluster-shared"
+    govstack.im/port-description: "X-Road Central Server registration interface"
+    govstack.im/external-port: "4001"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - name: reg
+      protocol: TCP
+      port: 4001
+      targetPort: 4001
+  selector:
+    app.kubernetes.io/name: xroad-central-server
+    app.kubernetes.io/component: central-server
+---
+{{- if and (index .Values "central-server" "Ingress" "traefik" "enabled") }}
+{{- include "x-road-csx.traefik.ingress" . }}
+{{- end }}
+{{- end }}
+# End of Ingress resources block (closes if from line 194)

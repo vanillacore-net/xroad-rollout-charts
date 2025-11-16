@@ -1,0 +1,98 @@
+{{- if and .Values.postgres .Values.postgres.enabled }}
+{{- if and .Values.postgres.persistence .Values.postgres.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-{{ include "x-road-csx.fullnameWithId" $ }}-pgdata
+  labels:
+    {{- include "x-road-csx.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ (index .Values.postgres.persistence.pgdata).accessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ required "postgres.persistence.pgdata.size is required" (index .Values.postgres.persistence.pgdata).size }}
+  {{- if hasKey (index .Values.postgres.persistence) "pgdata" }}
+  {{- if hasKey (index .Values.postgres.persistence.pgdata) "storageClassName" }}
+  storageClassName: {{- if (index .Values.postgres.persistence.pgdata).storageClassName }} {{ (index .Values.postgres.persistence.pgdata).storageClassName | quote }} {{- else }} "" {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- with (index .Values.postgres.persistence.pgdata).bind }}
+  {{- if .enabled }}
+    {{- if .volumeName }}
+  volumeName: {{ .volumeName | quote }}
+    {{- end }}
+    {{- if or .matchLabels .matchExpressions }}
+  selector:
+      {{- if .matchLabels }}
+    matchLabels:{{ toYaml .matchLabels | nindent 6 }}
+      {{- end }}
+      {{- if .matchExpressions }}
+    matchExpressions:{{ toYaml .matchExpressions | nindent 6 }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "x-road-csx.fullnameWithId" $ }}-db
+  labels:
+    {{- include "x-road-csx.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ include "x-road-csx.fullnameWithId" $ }}-db
+  selector:
+    matchLabels:
+      app: {{ include "x-road-csx.fullnameWithId" $ }}-db
+  template:
+    metadata:
+      labels:
+        app: {{ include "x-road-csx.fullnameWithId" $ }}-db
+        {{- include "x-road-csx.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ include "x-road-csx.fullnameWithId" $ }}-db
+          image: postgres:14
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              memory: {{ index .Values "postgres" "resources" "requests" "memory" | default "256Mi" | quote }}          
+              cpu: {{ index .Values "postgres" "resources" "requests" "cpu" | default "500m" | quote }}
+            limits:
+              memory: {{ index .Values "postgres" "resources" "limits" "memory" | default "4Gi" | quote }}
+              cpu: {{ index .Values "postgres" "resources" "limits" "cpu" | default "2" | quote }}
+          env:
+            - name: PGDATA
+              value: /mnt/pgdata/data                
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "x-road-csx.fullnameWithId" $ }}
+                  key: dbPassword
+          volumeMounts:
+            - mountPath: /mnt/pgdata
+              name: pgdata
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: pvc-{{ include "x-road-csx.fullnameWithId" $ }}-pgdata
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "x-road-csx.fullnameWithId" $ }}-db
+  labels:
+    {{- include "x-road-csx.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  ports:
+    - port: 5432
+  selector:
+    app: {{ include "x-road-csx.fullnameWithId" $ }}-db
+{{- end }}

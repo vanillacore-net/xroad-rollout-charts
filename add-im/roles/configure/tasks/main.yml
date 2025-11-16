@@ -1,0 +1,422 @@
+---
+# Security Server Configuration Role
+# Configures the Security Server similar to hurl-auto-config but using Ansible
+# Uses port-forward to access SS UI and HTTPS endpoints for test-ca
+
+- name: Ensure certificate directory exists
+  file:
+    path: "{{ cert_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Set SS UI URL based on access method
+  set_fact:
+    ss_ui_url: "{{ 'https://' + ss_ingress_hostname if (ss_ingress_enabled | default(false)) else 'https://localhost:' + (ss_port_forward_local_port | string) }}"
+
+- name: Ensure SS access is configured
+  assert:
+    that:
+      - ss_port_forward_enabled | default(true) or ss_ingress_enabled | default(false)
+    fail_msg: "Either ss_port_forward_enabled or ss_ingress_enabled must be true for configuration"
+    success_msg: "SS access configured via {{ 'Ingress' if (ss_ingress_enabled | default(false)) else 'port-forward' }}"
+
+- name: Include port-forward role
+  include_role:
+    name: port_forward
+  when: ss_port_forward_enabled | default(true)
+
+- name: Verify port-forward is actually running
+  wait_for:
+    host: localhost
+    port: "{{ ss_port_forward_local_port }}"
+    delay: 2
+    timeout: 30
+  when: ss_port_forward_enabled | default(true)
+  register: port_forward_ready
+  failed_when: false
+
+- name: Restart port-forward if it died
+  include_role:
+    name: port_forward
+  when: >
+    ss_port_forward_enabled | default(true) and
+    (port_forward_ready.failed | default(false) or port_forward_ready.elapsed | default(0) == 0)
+
+- name: Verify port-forward is running (after restart if needed)
+  wait_for:
+    host: localhost
+    port: "{{ ss_port_forward_local_port }}"
+    delay: 2
+    timeout: 30
+  when: ss_port_forward_enabled | default(true)
+
+- name: Check SS UI is accessible
+  uri:
+    url: "{{ ss_ui_url }}"
+    method: GET
+    status_code: [200, 302, 401]
+    validate_certs: false
+    follow_redirects: all
+  register: ss_ui_check
+  retries: 10
+  delay: 5
+  until: ss_ui_check.status in [200, 302, 401]
+
+- name: Verify password is provided
+  assert:
+    that:
+      - ss_ui_password | default('') | length > 0
+    fail_msg: "ss_ui_password must be provided. The Security Server password may have been changed from the default 'secret'. Provide it via -e ss_ui_password=your_password"
+    success_msg: "Password provided for Security Server login"
+
+- name: Login to Security Server
+  uri:
+    url: "{{ ss_ui_url }}/login"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      username: "{{ ss_ui_username | default('xrd') }}"
+      password: "{{ ss_ui_password }}"
+    status_code: [200, 302, 401]
+    validate_certs: false
+    follow_redirects: none
+  register: ss_login
+  failed_when: false  # Don't fail here, check in next task
+
+- name: Check login was successful
+  assert:
+    that:
+      - ss_login.status in [200, 302]
+    fail_msg: >
+      Login failed with status {{ ss_login.status }}.
+      {% if ss_login.status == 401 %}
+      The password is incorrect. The Security Server password may have been changed from the default 'secret'.
+      Please provide the correct password via -e ss_ui_password=your_password
+      {% else %}
+      Unexpected error during login. Check the Security Server logs.
+      {% endif %}
+    success_msg: "Login successful"
+
+- name: Extract XSRF token from login response
+  set_fact:
+    ss_xsrf_token: "{{ ss_login.cookies.XSRF_TOKEN.value | default(ss_login.cookies['XSRF-TOKEN'].value) }}"
+  failed_when: ss_xsrf_token is not defined
+
+- name: Get configuration anchor from Central Server
+  uri:
+    url: "https://{{ cs_hostname }}/api/v1/configuration-sources/INTERNAL/anchor/download"
+    method: GET
+    headers:
+      X-XSRF-TOKEN: "{{ cs_xsrf_token | default('') }}"
+    status_code: 200
+    validate_certs: "{{ validate_certs | default(true) }}"
+    return_content: yes
+  register: gconf_anchor_response
+  when: gconf_anchor is not defined
+  # Note: If CS is not accessible, gconf_anchor must be provided as variable
+
+- name: Set configuration anchor from response
+  set_fact:
+    gconf_anchor: "{{ gconf_anchor_response.content }}"
+  when: gconf_anchor is not defined and gconf_anchor_response.content is defined
+
+- name: Upload configuration anchor to Security Server
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/system/anchor"
+    method: POST
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+      Content-Type: "application/octet-stream"
+    body: "{{ gconf_anchor }}"
+    status_code: [200, 201, 409]
+    validate_certs: false
+  register: anchor_upload
+  failed_when: anchor_upload.status not in [200, 201, 409]
+
+- name: Initialize Security Server
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/initialization"
+    method: POST
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      owner_member_class: "{{ ss_owner_member_class | default('GOV') }}"
+      owner_member_code: "{{ ss_owner_member_code }}"
+      security_server_code: "{{ ss_security_server_code }}"
+      software_token_pin: "{{ ss_token_pin }}"
+      ignore_warnings: true
+    status_code: [200, 201, 409]
+    validate_certs: false
+  register: ss_init
+  failed_when: ss_init.status not in [200, 201, 409]
+
+- name: Login to Security Server token
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/tokens/0/login"
+    method: PUT
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      password: "{{ ss_token_pin }}"
+    status_code: [200, 204]
+    validate_certs: false
+  register: token_login
+
+- name: Get CA name from Security Server
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/certificate-authorities"
+    method: GET
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+    status_code: 200
+    validate_certs: false
+    return_content: yes
+  register: ca_list
+  until: ca_list.json | length > 0
+  retries: 10
+  delay: 5
+
+- name: Set CA name
+  set_fact:
+    ca_name: "{{ ca_list.json[0].name }}"
+
+- name: Add auth key to Security Server token
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/tokens/0/keys-with-csrs"
+    method: POST
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      key_label: "Auth key"
+      csr_generate_request:
+        key_usage_type: "AUTHENTICATION"
+        ca_name: "{{ ca_name }}"
+        csr_format: "DER"
+        subject_field_values:
+          CN: "{{ ss_hostname }}"
+          C: "{{ ss_cert_country | default('EE') }}"
+          O: "{{ ss_cert_organization | default('Operator') }}"
+          subjectAltName: "{{ ss_hostname }}"
+          serialNumber: "{{ gs_instance | default(ss_instance_id | default('assembly')) }}/{{ ss_security_server_code }}/{{ ss_owner_member_class }}"
+    status_code: [200, 201, 400, 409]
+    validate_certs: false
+    return_content: yes
+  register: auth_key_create
+  failed_when: auth_key_create.status not in [200, 201, 400, 409]
+
+- name: Set auth key ID and CSR ID
+  set_fact:
+    auth_key_id: "{{ auth_key_create.json.key.id | default(auth_key_create.json.key_id) }}"
+    auth_csr_id: "{{ auth_key_create.json.csr_id }}"
+  when: auth_key_create.status in [200, 201]
+
+- name: Get auth key CSR from Security Server
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/keys/{{ auth_key_id }}/csrs/{{ auth_csr_id }}?csr_format=PEM"
+    method: GET
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+    status_code: 200
+    validate_certs: false
+    return_content: yes
+  register: auth_csr_response
+  when: auth_key_create.status in [200, 201]
+
+- name: Create multipart form data for auth CSR signing
+  set_fact:
+    auth_csr_multipart: |
+      --certboundary
+      Content-Disposition: form-data; name="type"
+
+      auth
+      --certboundary
+      Content-Disposition: form-data; name="certreq"; filename="auth.csr.pem"
+
+      {{ auth_csr_response.content }}
+      --certboundary--
+  when: auth_key_create.status in [200, 201] and auth_csr_response.content is defined
+
+- name: Sign auth key CSR via test-ca HTTPS endpoint
+  uri:
+    url: "https://{{ testca_ocsp_url }}/testca/sign"
+    method: POST
+    headers:
+      Content-Type: "multipart/form-data; boundary=certboundary"
+    body: "{{ auth_csr_multipart }}"
+    status_code: 200
+    validate_certs: "{{ validate_certs | default(true) }}"
+    return_content: yes
+  register: auth_cert_signed
+  when: auth_key_create.status in [200, 201] and auth_csr_response.content is defined
+
+- name: Import auth certificate to Security Server
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/token-certificates"
+    method: POST
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+      Content-Type: "application/octet-stream"
+    body: "{{ auth_cert_signed.content }}"
+    status_code: [200, 201, 409]
+    validate_certs: false
+    return_content: yes
+  register: auth_cert_import
+  when: auth_cert_signed.content is defined
+  failed_when: auth_cert_import.status not in [200, 201, 409]
+
+- name: Set auth certificate hash
+  set_fact:
+    auth_cert_hash: "{{ auth_cert_import.json.certificate_details.hash }}"
+  when: auth_cert_import.status in [200, 201, 409] and auth_cert_import.json.certificate_details.hash is defined
+
+- name: Add sign key to Security Server token
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/tokens/0/keys-with-csrs"
+    method: POST
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      key_label: "Sign key"
+      csr_generate_request:
+        key_usage_type: "SIGNING"
+        ca_name: "{{ ca_name }}"
+        csr_format: "DER"
+        member_id: "{{ gs_instance | default(ss_instance_id | default('assembly')) }}:{{ ss_owner_member_class }}:{{ ss_owner_member_code }}"
+        subject_field_values:
+          CN: "{{ ss_owner_member_code }}"
+          C: "{{ ss_cert_country | default('EE') }}"
+          O: "{{ ss_cert_organization | default('Operator') }}"
+          subjectAltName: "{{ ss_hostname }}"
+          serialNumber: "{{ gs_instance | default(ss_instance_id | default('assembly')) }}/{{ ss_security_server_code }}/{{ ss_owner_member_class }}"
+    status_code: [200, 201, 400, 409]
+    validate_certs: false
+    return_content: yes
+  register: sign_key_create
+  failed_when: sign_key_create.status not in [200, 201, 400, 409]
+
+- name: Set sign key ID and CSR ID
+  set_fact:
+    sign_key_id: "{{ sign_key_create.json.key.id | default(sign_key_create.json.key_id) }}"
+    sign_csr_id: "{{ sign_key_create.json.csr_id }}"
+  when: sign_key_create.status in [200, 201]
+
+- name: Get sign key CSR from Security Server
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/keys/{{ sign_key_id }}/csrs/{{ sign_csr_id }}?csr_format=PEM"
+    method: GET
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+    status_code: 200
+    validate_certs: false
+    return_content: yes
+  register: sign_csr_response
+  when: sign_key_create.status in [200, 201]
+
+- name: Create multipart form data for sign CSR signing
+  set_fact:
+    sign_csr_multipart: |
+      --certboundary
+      Content-Disposition: form-data; name="type"
+
+      sign
+      --certboundary
+      Content-Disposition: form-data; name="certreq"; filename="sign.csr.pem"
+
+      {{ sign_csr_response.content }}
+      --certboundary--
+  when: sign_key_create.status in [200, 201] and sign_csr_response.content is defined
+
+- name: Sign sign key CSR via test-ca HTTPS endpoint
+  uri:
+    url: "https://{{ testca_ocsp_url }}/testca/sign"
+    method: POST
+    headers:
+      Content-Type: "multipart/form-data; boundary=certboundary"
+    body: "{{ sign_csr_multipart }}"
+    status_code: 200
+    validate_certs: "{{ validate_certs | default(true) }}"
+    return_content: yes
+  register: sign_cert_signed
+  when: sign_key_create.status in [200, 201] and sign_csr_response.content is defined
+
+- name: Import sign certificate to Security Server
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/token-certificates"
+    method: POST
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+      Content-Type: "application/octet-stream"
+    body: "{{ sign_cert_signed.content }}"
+    status_code: [200, 201, 409]
+    validate_certs: false
+    return_content: yes
+  register: sign_cert_import
+  when: sign_cert_signed.content is defined
+  failed_when: sign_cert_import.status not in [200, 201, 409]
+
+- name: Activate auth certificate on Security Server
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/token-certificates/{{ auth_cert_hash }}/activate"
+    method: PUT
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+    status_code: [200, 204]
+    validate_certs: false
+  register: auth_cert_activate
+  when: auth_cert_hash is defined
+  failed_when: auth_cert_activate.status not in [200, 204]
+
+- name: Get timestamping services from Security Server
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/timestamping-services"
+    method: GET
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+    status_code: 200
+    validate_certs: false
+    return_content: yes
+  register: tsa_list
+  until: tsa_list.json | length > 0
+  retries: 10
+  delay: 5
+
+- name: Set TSA name and URL
+  set_fact:
+    tsa_name: "{{ tsa_list.json[0].name }}"
+    tsa_url: "{{ tsa_list.json[0].url }}"
+
+- name: Set timestamping service on Security Server
+  uri:
+    url: "{{ ss_ui_url }}/api/v1/system/timestamping-services"
+    method: POST
+    headers:
+      X-XSRF-TOKEN: "{{ ss_xsrf_token }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      name: "{{ tsa_name }}"
+      url: "{{ tsa_url }}"
+    status_code: [200, 201, 409]
+    validate_certs: false
+  register: tsa_set
+  failed_when: tsa_set.status not in [200, 201, 409]
+
+- name: Display configuration summary
+  debug:
+    msg:
+      - "Security Server configuration completed"
+      - "SS Hostname: {{ ss_hostname }}"
+      - "SS Code: {{ ss_security_server_code }}"
+      - "Owner: {{ ss_owner_member_class }}:{{ ss_owner_member_code }}"
+      - "Auth Certificate: {{ 'Imported' if auth_cert_hash is defined else 'Not imported' }}"
+      - "Sign Certificate: {{ 'Imported' if sign_cert_import.status is defined else 'Not imported' }}"
+      - "TSA Service: {{ tsa_name }}"
+

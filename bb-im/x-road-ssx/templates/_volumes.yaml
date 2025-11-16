@@ -1,0 +1,25 @@
+{{/*
+Volumes definition for X-Road Security Server
+*/}}
+{{- define "x-road-ssx.volumes" -}}
+{{- if and (index .Values "security-server" "persistence" "enabled") }}
+- name: xroad-config
+  persistentVolumeClaim:
+    claimName: pvc-{{ include "x-road-ssx.fullnameWithId" . }}-config
+- name: xroad-lib
+  persistentVolumeClaim:
+    claimName: pvc-{{ include "x-road-ssx.fullnameWithId" . }}-lib
+- name: xroad-dbdata
+  persistentVolumeClaim:
+    claimName: pvc-{{ include "x-road-ssx.fullnameWithId" . }}-dbdata
+{{- end }}
+- name: certs
+  secret:
+    secretName: {{ include "x-road-ssx.fullnameWithId" . }}-cert
+- name: test-ca-cert
+  secret:
+    secretName: test-ca-trust
+- name: shared-truststore
+  emptyDir: {}
+{{- end }}
+

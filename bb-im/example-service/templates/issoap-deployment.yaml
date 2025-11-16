@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    kompose.cmd: kompose -f compose.yaml -f compose.dev.yaml convert -c
+    kompose.version: 1.37.0 (HEAD)
+  labels:
+    io.kompose.service: issoap
+  name: issoap
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: issoap
+  template:
+    metadata:
+      annotations:
+        kompose.cmd: kompose -f compose.yaml -f compose.dev.yaml convert -c
+        kompose.version: 1.37.0 (HEAD)
+      labels:
+        io.kompose.service: issoap
+    spec:
+      initContainers:
+        - name: install-ca
+          image: openjdk:21-jdk-slim
+          command:
+          - /bin/bash
+          - -c
+          args:
+          - |
+            set -e
+            echo "=== Installing Test CA Certificate ==="
+
+            # Install necessary packages
+            apt-get update && apt-get install -y ca-certificates
+
+            # Convert ca.pem to test-ca.crt (DER format)
+            echo "Converting ca.pem to test-ca.crt..."
+            openssl x509 -outform der -in /etc/ssl/test-ca/ca.pem -out /etc/ssl/test-ca/test-ca.crt
+
+            # Copy CA certificate to system trust store
+            cp /etc/ssl/test-ca/test-ca.crt /usr/local/share/ca-certificates/
+            update-ca-certificates
+
+            # Copy the Java truststore from this container and add test CA
+            echo "Copying Java truststore from /usr/local/openjdk-21/lib/security/cacerts"
+            mkdir -p /shared-truststore
+            cp /usr/local/openjdk-21/lib/security/cacerts /shared-truststore/cacerts
+
+            # Add test CA certificate to the copied truststore
+            echo "Installing test CA certificate into truststore"
+            # Remove existing test-ca alias if it exists
+            keytool -delete -alias test-ca -keystore /shared-truststore/cacerts -storepass changeit -noprompt 2>/dev/null || true
+            keytool -delete -alias testca -keystore /shared-truststore/cacerts -storepass changeit -noprompt 2>/dev/null || true
+            # Import the test CA certificate
+            keytool -import -trustcacerts -alias test-ca -file /etc/ssl/test-ca/test-ca.crt -keystore /shared-truststore/cacerts -storepass changeit -noprompt
+            echo "Test CA certificate imported successfully"
+
+            # Set proper permissions
+            chmod 644 /shared-truststore/cacerts
+
+            # Verify the certificate was imported
+            echo "Verifying test CA certificate import:"
+            keytool -list -alias test-ca -keystore /shared-truststore/cacerts -storepass changeit -noprompt
+
+            echo "=== CA certificate installation completed ==="
+          volumeMounts:
+          - name: test-ca-cert
+            mountPath: /etc/ssl/test-ca
+          - name: shared-truststore
+            mountPath: /shared-truststore
+      containers:
+        - command:
+            - java
+            - -Xms64m
+            - -Xmx256m
+            - -jar
+            - /example-adapter.war
+          image: niis/example-adapter:latest
+          env:
+            - name: JAVAX_NET_SSL_TRUSTSTORE
+              value: /shared-truststore/cacerts
+            - name: JAVAX_NET_SSL_TRUSTSTOREPASSWORD
+              value: changeit
+            - name: JAVAX_NET_SSL_TRUSTSTORETYPE
+              value: JKS
+            - name: JAVA_OPTS
+              value: "-Djavax.net.ssl.trustStore=/shared-truststore/cacerts -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=JKS"
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Djavax.net.ssl.trustStore=/shared-truststore/cacerts -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=JKS"
+          livenessProbe:
+            exec:
+              command:
+                - curl
+                - -f
+                - -k
+                - http://localhost:8080/example-adapter/Endpoint?wsdl
+            failureThreshold: 40
+            periodSeconds: 5
+          name: issoap
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          resources:
+            limits:
+              memory: "512M"
+            requests:
+              memory: "64M"
+          volumeMounts:
+            - name: shared-truststore
+              mountPath: /shared-truststore
+      restartPolicy: Always
+      volumes:
+        - name: test-ca-cert
+          secret:
+            secretName: test-ca-trust
+        - name: shared-truststore
+          emptyDir: {}

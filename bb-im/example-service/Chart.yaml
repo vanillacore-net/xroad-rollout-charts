@@ -1,0 +1,5 @@
+apiVersion: v2
+name: xr-example-service
+description: A generated Helm Chart for compose from Skippbox Kompose
+version: 0.0.1
+type: application

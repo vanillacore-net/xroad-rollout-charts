@@ -1,0 +1,71 @@
+{{/*
+Init container for installing CA certificate
+*/}}
+{{- define "x-road-ss.container.init.installCa" -}}
+- name: install-ca
+  image: "{{ index .Values "security-server" "repository" }}:{{ index .Values "security-server" "imageTag" }}"
+  imagePullPolicy: Always
+  command:
+    - /bin/bash
+    - -c
+  args:
+    - |
+      set -euo pipefail
+      echo "=== Installing Test CA Certificate ==="
+
+      # Get Test CA certificate from secret
+      if [ ! -f /etc/ssl/test-ca/ca.pem ]; then
+        echo "ERROR: Test CA certificate not found at /etc/ssl/test-ca/ca.pem"
+        exit 1
+      fi
+
+      # Convert ca.pem to DER format
+      openssl x509 -outform der -in /etc/ssl/test-ca/ca.pem -out /tmp/test-ca.crt
+
+      # Copy CA certificate to system trust store
+      cp /tmp/test-ca.crt /usr/local/share/ca-certificates/test-ca.crt
+      update-ca-certificates
+
+      # Find Java truststore (X-Road image has Java)
+      # Try multiple methods to find Java
+      JAVA_BIN=$(which java 2>/dev/null || echo "")
+      if [ -n "$JAVA_BIN" ]; then
+        JAVA_BIN=$(readlink -f "$JAVA_BIN" 2>/dev/null || echo "$JAVA_BIN")
+        JAVA_HOME=$(dirname $(dirname "$JAVA_BIN"))
+        TRUSTSTORE_PATH="${JAVA_HOME}/lib/security/cacerts"
+      elif [ -d /usr/lib/jvm ]; then
+        JAVA_DIR=$(find /usr/lib/jvm -maxdepth 1 -type d | head -1)
+        TRUSTSTORE_PATH="${JAVA_DIR}/lib/security/cacerts"
+      elif [ -d /opt/java ]; then
+        TRUSTSTORE_PATH="/opt/java/lib/security/cacerts"
+      else
+        TRUSTSTORE_PATH=$(find /opt /usr -name "cacerts" -type f 2>/dev/null | head -1)
+      fi
+      
+      if [ -z "${TRUSTSTORE_PATH}" ] || [ ! -f "${TRUSTSTORE_PATH}" ]; then
+        echo "ERROR: Could not find Java truststore (cacerts)"
+        echo "Searched in: JAVA_HOME=${JAVA_HOME:-not set}, /usr/lib/jvm, /opt/java, and via find"
+        exit 1
+      fi
+      echo "Found truststore at: ${TRUSTSTORE_PATH}"
+
+      # Copy truststore to shared volume
+      mkdir -p /shared-truststore
+      cp "${TRUSTSTORE_PATH}" /shared-truststore/cacerts
+
+      # Add test CA certificate to truststore
+      keytool -delete -alias test-ca -keystore /shared-truststore/cacerts -storepass changeit -noprompt 2>/dev/null || true
+      keytool -import -trustcacerts -alias test-ca -file /tmp/test-ca.crt -keystore /shared-truststore/cacerts -storepass changeit -noprompt
+
+      # Set proper permissions
+      chmod 644 /shared-truststore/cacerts
+
+      echo "Test CA certificate installed successfully"
+  volumeMounts:
+    - mountPath: /etc/ssl/test-ca
+      name: test-ca-cert
+      readOnly: true
+    - mountPath: /shared-truststore
+      name: shared-truststore
+{{- end }}
+

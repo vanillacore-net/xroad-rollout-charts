@@ -1,0 +1,173 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "x-road-ssx.fullname" $ }}-config-sh-demo
+spec:
+  schedule: "0 0 * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: hurl
+              image: orangeopensource/hurl:1.8.0
+              command: ["/bin/sh"]
+              args:
+                - "-c"
+                - |
+                  echo "=== Starting hurl sh-demo setup ==="
+                  echo "This will configure: Central Server (cs1), Security Server 0 (ss0), and Security Server 1 (ss1)"
+                  echo "All configuration loaded from environment variables and secrets"
+
+                  # Debug: Show environment variables
+                  echo "=== Environment Variables ==="
+                  env | grep -E "(cs_host|ca_host|ss0_host|ss1_host)" | head -20
+
+                  # Pass environment variables explicitly to hurl
+                  hurl --test /workspace/setup_sh-demo.hurl \
+                    --variable cs_host="$cs_host" \
+                    --variable ca_host="$ca_host" \
+                    --variable ca_ocsp_host="$ca_ocsp_host" \
+                    --variable ca_ocsp_port="$ca_ocsp_port" \
+                    --variable ca_acme_host="$ca_acme_host" \
+                    --variable ca_acme_port="$ca_acme_port" \
+                    --variable ca_tsa_host="$ca_tsa_host" \
+                    --variable ca_tsa_port="$ca_tsa_port" \
+                    --variable ss0_host="$ss0_host" \
+                    --variable ss1_host="$ss1_host" \
+                    --variable cs_host_pin="$cs_host_pin" \
+                    --variable ss0_host_pin="$ss0_host_pin" \
+                    --variable ss1_host_pin="$ss1_host_pin" \
+                    --variable cs_host_password="$cs_host_password" \
+                    --variable ss0_host_password="$ss0_host_password" \
+                    --variable ss1_host_password="$ss1_host_password" \
+                    --very-verbose --insecure --retry --retry-interval=10000
+              env:
+                - name: cs_host
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: cs_host
+                - name: ca_host
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: ca_host
+                - name: ca_ocsp_host
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: ca_ocsp_host
+                - name: ca_ocsp_port
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: ca_ocsp_port
+                - name: ca_acme_host
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: ca_acme_host
+                - name: ca_acme_port
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: ca_acme_port
+                - name: ca_tsa_host
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: ca_tsa_host
+                - name: ca_tsa_port
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: ca_tsa_port
+                - name: ss0_host
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: ss0_host
+                - name: ss1_host
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: ss1_host
+                - name: example_service_wsdl
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: example_service_wsdl
+                - name: example_service_address
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: example_service_address
+                - name: is_rest_url
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: is_rest_url
+                - name: is_rest_service_code
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: is_rest_service_code
+                - name: is_openapi_url
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: is_openapi_url
+                - name: is_openapi_service_code
+                  valueFrom:
+                    configMapKeyRef:
+                      name: hurl-env
+                      key: is_openapi_service_code
+                - name: cs_host_pin
+                  valueFrom:
+                    secretKeyRef:
+                      name: cs-1
+                      key: tokenPin
+                - name: cs_host_password
+                  valueFrom:
+                    secretKeyRef:
+                      name: cs-1
+                      key: password
+                - name: ss0_host_pin
+                  valueFrom:
+                    secretKeyRef:
+                      name: ss-0
+                      key: tokenPin
+                - name: ss0_host_password
+                  valueFrom:
+                    secretKeyRef:
+                      name: ss-0
+                      key: password
+                - name: ss1_host_pin
+                  valueFrom:
+                    secretKeyRef:
+                      name: ss-1
+                      key: tokenPin
+                - name: ss1_host_password
+                  valueFrom:
+                    secretKeyRef:
+                      name: ss-1
+                      key: password
+              volumeMounts:
+                - name: ca
+                  mountPath: /workspace/ca/
+                  readOnly: true
+                - name: hurl-setup
+                  mountPath: /workspace/setup_sh-demo.hurl
+                  subPath: setup_sh-demo.hurl
+                  readOnly: true
+          volumes:
+            - name: ca
+              secret:
+                secretName: hurl-cert
+            - name: hurl-setup
+              configMap:
+                name: hurl-setup

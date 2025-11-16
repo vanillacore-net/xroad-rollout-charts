@@ -1,0 +1,70 @@
+{{/*
+Init container for copying certificates
+*/}}
+{{- define "x-road-ssx.container.init.copyCerts" -}}
+- name: copy-certificates
+  image: "{{ index .Values "security-server" "initContainer" "repository" }}:{{ index .Values "security-server" "initContainer" "imageTag" }}"
+  imagePullPolicy: Always
+  command:
+    - sh
+    - -c
+  args:
+    - |
+      # set -euo pipefail
+
+      echo "=== X-Road Security Server Init Container ==="
+
+      echo "--- Installing rsync..."
+      apt-get update && apt-get install -y rsync
+
+      echo "--- Listing shared volume before copy..."
+      find /shared-volume -type f -exec sha256sum {} \;
+
+      echo "--- Copying certificates..."
+      mkdir -p /shared-volume/ssl
+      cd /shared-volume/ssl
+      ls -lath
+
+      rm -vf internal.*
+      rm -vf proxy-ui-api.*
+
+      cp -v /certs/certificate-ss-* ./
+      cp -v /certs/certificate.crt ./
+      cp -v /certs/certificate.key ./
+
+      ln -vs certificate-ss-internal.p12 internal.p12
+      ln -vs certificate-ss-ui.p12 proxy-ui-api.p12
+      ln -vs certificate.crt proxy-ui-api.crt
+      ln -vs certificate.key proxy-ui-api.key
+      ln -vs certificate.crt internal.crt
+      ln -vs certificate.key internal.key
+
+      ls -lath
+
+      echo "--- Setting proper permissions..."
+      chown -R 999:999 /shared-volume/ssl
+      chmod 660 /shared-volume/ssl/*
+
+      echo "--- Verifying copied files..."
+      ls -la /shared-volume/ssl/
+
+      echo "--- Creating local.properties with truststore settings..."
+      mkdir -p /shared-volume/services
+      echo 'XROAD_PARAMS=-Djavax.net.ssl.trustStore=/shared-truststore/cacerts -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=JKS' > /shared-volume/services/local.properties
+      chown -R 999:999 /shared-volume/services
+      chmod 644 /shared-volume/services/local.properties
+      echo "--- Created local.properties with truststore settings"
+
+      echo "--- Listing shared volume after copy..."
+      find /shared-volume -type f -exec sha256sum {} \;
+
+      echo "--- Init container completed successfully!"
+      sleep 5
+  volumeMounts:
+    - mountPath: /shared-volume
+      name: xroad-config
+    - mountPath: /certs
+      name: certs
+      readOnly: true
+{{- end }}
+

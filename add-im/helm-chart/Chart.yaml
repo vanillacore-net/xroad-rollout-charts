@@ -1,0 +1,7 @@
+apiVersion: v2
+name: x-road-ss
+description: X-Road Security Server for DSS cluster
+type: application
+version: 1.0.0
+appVersion: "7.6.2"
+

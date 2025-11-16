@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kompose.cmd: kompose -f compose.yaml -f compose.dev.yaml convert -c
+    kompose.version: 1.37.0 (HEAD)
+  labels:
+    io.kompose.service: issoap
+  name: issoap
+spec:
+  ports:
+    - name: "4600"
+      port: 4600
+      targetPort: 8080
+  selector:
+    io.kompose.service: issoap

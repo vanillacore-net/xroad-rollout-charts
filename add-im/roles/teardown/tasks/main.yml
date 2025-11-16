@@ -1,0 +1,139 @@
+---
+# Security Server Teardown Role
+# Uninstalls the Security Server and cleans up resources
+
+- name: Ensure certificate directory exists
+  file:
+    path: "{{ cert_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Find Security Server pod (if still running)
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ ss_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/component=security-server"
+  register: ss_pods
+  ignore_errors: yes
+  failed_when: false
+
+- name: Set SS pod name if found
+  set_fact:
+    ss_pod_name: "{{ ss_pods.resources[0].metadata.name }}"
+  when: ss_pods.resources | default([]) | length > 0
+
+- name: Stop port-forward if running
+  kubectl_port_forward:
+    namespace: "{{ ss_namespace }}"
+    pod: "{{ ss_pod_name | default('dummy') }}"
+    local_port: "{{ ss_port_forward_local_port }}"
+    remote_port: "{{ ss_port_forward_remote_port }}"
+    state: stopped
+    timeout: "{{ port_forward_timeout }}"
+    pid_file: "{{ cert_dir }}/.ss-port-forward.pid"
+  ignore_errors: yes
+  when: ss_port_forward_enabled | default(true)
+
+- name: Kill any process using port-forward local port (fallback cleanup)
+  shell: |
+    PIDS=$(lsof -ti:{{ ss_port_forward_local_port }} 2>/dev/null || true)
+    if [ -n "$PIDS" ]; then
+      echo "$PIDS" | xargs kill -9 2>/dev/null || true
+    fi
+  ignore_errors: yes
+  when: ss_port_forward_enabled | default(true)
+
+- name: Remove port-forward PID file
+  file:
+    path: "{{ cert_dir }}/.ss-port-forward.pid"
+    state: absent
+  ignore_errors: yes
+
+- name: Check if Helm chart is installed
+  command: >
+    helm list -n {{ ss_namespace }} -q
+  register: helm_list
+  changed_when: false
+  failed_when: false
+
+- name: Uninstall Security Server Helm release
+  command: >
+    helm uninstall {{ ss_chart_name }}
+    --namespace {{ ss_namespace }}
+    --timeout {{ helm_timeout }}
+  register: helm_uninstall_result
+  when: ss_chart_name in helm_list.stdout
+  ignore_errors: yes
+
+- name: Wait for pods to terminate
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ ss_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/component=security-server"
+  register: ss_pods
+  until: ss_pods.resources | length == 0
+  retries: 30
+  delay: 5
+  when: ss_chart_name in helm_list.stdout
+  ignore_errors: yes
+
+- name: Get all PVCs for Security Server
+  kubernetes.core.k8s_info:
+    kind: PersistentVolumeClaim
+    namespace: "{{ ss_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/component=security-server"
+  register: ss_pvcs
+  ignore_errors: yes
+  failed_when: false
+
+- name: Delete PersistentVolumeClaims
+  kubernetes.core.k8s:
+    name: "{{ item.metadata.name }}"
+    namespace: "{{ ss_namespace }}"
+    api_version: v1
+    kind: PersistentVolumeClaim
+    state: absent
+  loop: "{{ ss_pvcs.resources | default([]) }}"
+  when: >
+    teardown_delete_pvcs | default(false) and
+    not (teardown_delete_all | default(false)) and
+    ss_pvcs.resources | default([]) | length > 0
+  ignore_errors: yes
+
+- name: Delete Security Server secrets
+  kubernetes.core.k8s:
+    name: "{{ item }}"
+    namespace: "{{ ss_namespace }}"
+    api_version: v1
+    kind: Secret
+    state: absent
+  loop:
+    - "{{ ss_chart_name }}-cert"
+    - "test-ca-trust"
+  when: >
+    teardown_delete_secrets | default(false) and
+    not (teardown_delete_all | default(false))
+  ignore_errors: yes
+
+- name: Delete namespace (cascades to all resources)
+  kubernetes.core.k8s:
+    name: "{{ ss_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: absent
+  when: teardown_delete_all | default(false)
+  ignore_errors: yes
+
+- name: Display teardown status
+  debug:
+    msg:
+      - "Security Server teardown complete"
+      - "Chart: {{ ss_chart_name }}"
+      - "Namespace: {{ ss_namespace }}"
+      - "Delete all (namespace): {{ 'Yes (all resources removed)' if (teardown_delete_all | default(false)) else 'No' }}"
+      - "PVCs deleted: {{ 'Yes' if (teardown_delete_pvcs | default(false)) or (teardown_delete_all | default(false)) else 'No' }}"
+      - "Secrets deleted: {{ 'Yes' if (teardown_delete_secrets | default(false)) or (teardown_delete_all | default(false)) else 'No' }}"
+

@@ -1,0 +1,60 @@
+# Default values for bastion
+replicaCount: 1
+
+image:
+  repository: ubuntu
+  tag: "22.04"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 22
+  targetPort: 22
+
+# SSH configuration
+ssh:
+  # Use existing secret with authorized_keys (alternative to secrets.yaml)
+  # If set, this takes precedence over secrets.yaml
+  authorizedKeysSecret: ""
+  # SSH host key secret (optional, will be generated if not provided)
+  hostKeySecret: ""
+
+# Resources
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "100m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+
+# Additional packages to install
+packages:
+  - openssh-server
+  - vim
+  - curl
+  - wget
+  - git
+  - net-tools
+  - iputils-ping
+  - dnsutils
+  - jq
+  - less
+  - tree
+  - htop
+  - python3
+  - python3-pip
+  - ansible
+  - sudo
+  - ca-certificates
+
+# Persistent storage
+persistence:
+  enabled: true
+  size: 5Gi
+  storageClassName: ""  # Use default storage class if empty
+  accessMode: ReadWriteOnce
+
+# Namespace
+namespace: default
+

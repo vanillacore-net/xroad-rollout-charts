@@ -1,0 +1,89 @@
+{{/*
+Main Central Server container definition
+*/}}
+{{- define "x-road-csx.container.main" -}}
+- name: xroad-central-server
+  image: "{{ index .Values "central-server" "repository" }}:{{ index .Values "central-server" "imageTag" }}"
+  imagePullPolicy: Always
+  resources:
+    requests:
+      memory: {{ index .Values "central-server" "resources" "requests" "memory" | default "2Gi" | quote }}
+      cpu: {{ index .Values "central-server" "resources" "requests" "cpu" | default "500m" | quote }}
+    limits:
+      memory: {{  index .Values "central-server" "resources" "limits" "memory" | default "4Gi" | quote }}
+      cpu: {{  index .Values "central-server" "resources" "limits" "cpu" | default "2" | quote }}
+  env:
+    - name: XROAD_TOKEN_PIN
+      valueFrom:
+        secretKeyRef:
+          name: {{ include "x-road-csx.fullnameWithId" . }}
+          key: tokenPin
+    - name: XROAD_ADMIN_USER
+      value: "xrd"
+    - name: XROAD_ADMIN_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ include "x-road-csx.fullnameWithId" . }}
+          key: password
+    - name: XROAD_DB_HOST
+      value: {{ include "x-road-csx.fullnameWithId" . }}-db
+    - name: XROAD_DB_PWD
+      valueFrom:
+        secretKeyRef:
+          name: {{ include "x-road-csx.fullnameWithId" . }}
+          key: dbPassword
+  lifecycle:
+    postStart:
+      exec:
+        command:
+          - /bin/bash
+          - -c
+          - |
+            # Set password after main container starts
+            # This ensures PAM recognizes the password
+            if [ -n "${XROAD_ADMIN_PASSWORD:-}" ]; then
+              echo "Setting password for xrd user (postStart hook)..."
+              echo "xrd:${XROAD_ADMIN_PASSWORD}" | chpasswd
+              echo "Password set successfully in postStart hook"
+            else
+              echo "WARNING: XROAD_ADMIN_PASSWORD not set in postStart hook"
+            fi
+  ports:
+    - containerPort: 80
+    - containerPort: 443
+    - containerPort: 4000
+    - containerPort: 4001
+    - containerPort: 4002
+    - containerPort: 8888
+    - containerPort: 8899
+    - containerPort: 9998
+  livenessProbe:
+    tcpSocket:
+      port: 4000
+    failureThreshold: 2
+    periodSeconds: 60
+  startupProbe:
+    tcpSocket:
+      port: 4000
+    failureThreshold: 60
+    periodSeconds: 20
+    initialDelaySeconds: 60
+{{- if and (index .Values "central-server" "persistence" "enabled") }}
+  volumeMounts:
+    - mountPath: /etc/xroad
+      name: xroad-config
+    - mountPath: /etc/nginx/sites-enabled/xroad-public.conf
+      name: nginx-config
+      subPath: xroad-public.conf
+    {{- if not (index .Values "postgres" "enabled") }}
+    # Only mount PostgreSQL data directory if using local database
+    - mountPath: /var/lib/postgresql/16/main
+      name: xroad-dbdata
+    {{- end }}
+    - mountPath: /var/lib/xroad
+      name: xroad-lib
+    - mountPath: /shared-truststore
+      name: shared-truststore
+{{- end }}
+{{- end }}
+

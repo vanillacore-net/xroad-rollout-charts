@@ -1,0 +1,28 @@
+---
+nameOverride: ""
+fullnameOverride: "hurl"
+
+# Central Server configuration
+cs_host: "cs.im.assembly.govstack.global"
+cs_conf_host: "conf.im.assembly.govstack.global"
+
+# Test CA configuration
+ca_host: "ca.test-ca.svc.cluster.local"
+ca_ocsp_host: "ocsp.im.assembly.govstack.global"
+ca_ocsp_port: "443"
+ca_acme_host: "acme.im.assembly.govstack.global"
+ca_acme_port: "443"
+ca_tsa_host: "tsa.im.assembly.govstack.global"
+ca_tsa_port: "443"
+
+# Security Server configuration
+ss0_host: "mss.im.assembly.govstack.global"
+ss1_host: "ss1.im.assembly.govstack.global"
+
+# Example service configuration
+example_service_wsdl: "http://issoap:8080/example-adapter/Endpoint?wsdl"
+example_service_address: "http://issoap:8080/example-adapter/Endpoint"
+is_rest_url: "http://isrest:8080/integration/mock_1"
+is_rest_service_code: "mock1"
+is_openapi_url: "http://isopenapi:8080/v3/api-docs"
+is_openapi_service_code: "restapi"

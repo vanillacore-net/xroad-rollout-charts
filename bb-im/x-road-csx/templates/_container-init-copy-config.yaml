@@ -1,0 +1,96 @@
+{{/*
+Init container for copying configuration files
+*/}}
+{{- define "x-road-csx.container.init.copyConfig" -}}
+- name: copy-config
+  image: "{{ index .Values "central-server" "repository" }}:{{ index .Values "central-server" "imageTag" }}"
+  imagePullPolicy: Always
+  command:
+    - bash
+    - -c
+  args:
+    - |
+      set -euo pipefail
+
+      echo "=== X-Road Central Server Init Container ==="
+
+      # Smart check: Skip initialization if key configuration files already exist
+      if [ -f "/shared-volume/conf.d/common.ini" ] && [ -f "/shared-volume/ssl/certificate-cs.p12" ]; then
+        echo "--- Configuration files already exist, skipping initialization..."
+        echo "--- Found existing files:"
+        ls -la /shared-volume/conf.d/common.ini
+        ls -la /shared-volume/ssl/certificate-cs.p12
+        echo "--- Init container completed (no action needed)!"
+        exit 0
+      fi
+
+      echo "--- Configuration files not found, proceeding with initialization..."
+
+      echo "--- Installing rsync..."
+      apt-get update && apt-get install -y rsync
+
+      echo "--- Listing shared volume before copy..."
+      find /shared-volume -type f -exec sha256sum {} \; || echo "No files found yet"
+
+      echo "--- Copying X-Road configuration files..."
+      rsync -rv --ignore-existing \
+        /etc/xroad/{conf.d,services,nginx,ssl,signer,db.properties,devices.ini,configuration-parts} \
+        /shared-volume/
+
+      echo "--- Copying certificates..."
+      cd /certs
+      ls -lath
+      cp -v certificate-cs.p12 /shared-volume/ssl/
+      cp -v certificate.crt /shared-volume/ssl/
+      cp -v certificate.key /shared-volume/ssl/
+
+      echo "--- Setting proper permissions..."
+      chown -R xroad:xroad /shared-volume
+      chmod -R 755 /shared-volume
+
+      echo "--- Verifying copied files..."
+      ls -la /shared-volume
+
+      echo "--- Preparint certificates..."
+      cd /shared-volume/ssl/
+      rm -vf center-admin-service.*
+      rm -vf management-service.*
+      rm -vf global-conf.*
+      ln -vs certificate-cs.p12 center-admin-service.p12
+      ln -vs certificate.crt management-service.crt
+      ln -vs certificate.key management-service.key
+      ln -vs certificate.crt global-conf.crt
+      ln -vs certificate.key global-conf.key
+      ls -lath
+
+      echo "--- Create backup directory and copy managementservices.wsdl..."
+      ls -lath /xroad-lib
+      mkdir -p /xroad-lib/backup
+      mkdir -p /xroad-lib/public
+      cp -v /var/lib/xroad/public/managementservices.wsdl /xroad-lib/public/
+      chown -R xroad:xroad /xroad-lib
+      ls -lathR /xroad-lib
+
+      echo "--- Creating local.properties with truststore settings..."
+      mkdir -p /shared-volume/services
+      echo 'XROAD_PARAMS=-Djavax.net.ssl.trustStore=/shared-truststore/cacerts -Djavax.net.ssl.trustStorePassword=changeit -Djavax.net.ssl.trustStoreType=JKS' > /shared-volume/services/local.properties
+      chown -R xroad:xroad /shared-volume/services
+      chmod 644 /shared-volume/services/local.properties
+      echo "--- Created local.properties with truststore settings"
+
+      echo "--- Init container completed successfully!"
+      sleep 5
+  volumeMounts:
+    - mountPath: /shared-volume
+      name: xroad-config
+    - mountPath: /certs
+      name: admin-cert
+      readOnly: true
+    - mountPath: /xroad-lib
+      name: xroad-lib
+    {{- if not (index .Values "postgres" "enabled") }}
+    - mountPath: /xroad-db
+      name: xroad-dbdata
+    {{- end }}
+{{- end }}
+

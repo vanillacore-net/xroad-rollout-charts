@@ -1,0 +1,5 @@
+apiVersion: v2
+name: hurl-auto-config
+description: Hurl cronjobs for automatic configuration of X-Road in Kubernetes
+type: application
+version: 1.0.0

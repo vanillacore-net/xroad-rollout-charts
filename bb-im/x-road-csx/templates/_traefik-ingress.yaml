@@ -1,0 +1,37 @@
+{{/*
+Traefik IngressRouteTCP resources for X-Road Central Server
+This template is included conditionally from central-server.yaml
+*/}}
+{{- define "x-road-csx.traefik.ingress" -}}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: {{ include "x-road-csx.fullnameWithId" . }}-tcp-4001
+spec:
+  entryPoints:
+    - xrd4001
+  routes:
+    - match: HostSNI(`{{ include "x-road-csx.fqdn" . }}`)
+      services:
+        - name: {{ include "x-road-csx.fullnameWithId" . }}
+          port: 4001
+  tls:
+    passthrough: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: {{ include "x-road-csx.fullnameWithId" . }}-tcp-4002
+spec:
+  entryPoints:
+    - xrd4002
+  routes:
+    - match: HostSNI(`{{ include "x-road-csx.fqdn" . }}`)
+      services:
+        - name: {{ include "x-road-csx.fullnameWithId" . }}
+          port: 4002
+  tls:
+    passthrough: true
+{{- end }}
+

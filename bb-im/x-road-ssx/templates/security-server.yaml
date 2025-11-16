@@ -1,0 +1,208 @@
+{{- if and (index .Values "security-server" "persistence" "enabled") }}
+{{- range $name, $cfg := index .Values "security-server" "persistence" }}
+{{- if ne $name "enabled" }}
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pvc-{{ include "x-road-ssx.fullnameWithId" $ }}-{{ $name }}
+  labels:
+    {{- include "x-road-ssx.labels" $ | nindent 4 }}
+spec:
+  accessModes:
+    - {{ $cfg.accessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ required (printf "security-server.persistence.%s.size is required" $name) $cfg.size }}
+  {{- if hasKey $cfg "storageClassName" }}
+  storageClassName: {{- if $cfg.storageClassName }} {{ $cfg.storageClassName | quote }} {{- else }} "" {{- end }}
+  {{- end }}
+  {{- with $cfg.bind }}
+  {{- if .enabled }}
+    {{- if .volumeName }}
+  volumeName: {{ .volumeName | quote }}
+    {{- end }}
+    {{- if or .matchLabels .matchExpressions }}
+  selector:
+      {{- if .matchLabels }}
+    matchLabels:{{ toYaml .matchLabels | nindent 6 }}
+      {{- end }}
+      {{- if .matchExpressions }}
+    matchExpressions:{{ toYaml .matchExpressions | nindent 6 }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "x-road-ssx.fullnameWithId" $ }}
+  labels:
+    {{- include "x-road-ssx.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "x-road-ssx.fullnameWithId" $ }}
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: {{ include "x-road-ssx.fullnameWithId" $ }}
+        {{- include "x-road-ssx.labels" . | nindent 8 }}
+    spec:
+      containers:
+{{ include "x-road-ssx.container.main" . | indent 8 }}
+      initContainers:
+{{ include "x-road-ssx.container.init.copyCerts" . | indent 8 }}
+{{ include "x-road-ssx.container.init.installCa" . | indent 8 }}
+      volumes:
+{{ include "x-road-ssx.volumes" . | indent 8 }}
+  strategy:
+    type: Recreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "x-road-ssx.fullnameWithId" $ }}
+  labels:
+    {{- include "x-road-ssx.labels" . | nindent 4 }}
+  {{- if (index .Values "security-server" "Service" "annotations") }}
+  annotations:
+    {{- toYaml (index .Values "security-server" "Service" "annotations") | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ index .Values "security-server" "Service" "type" | default "LoadBalancer" }}
+  selector:
+    app: {{ include "x-road-ssx.fullnameWithId" $ }}
+  ports:
+    - port: 4000
+      targetPort: 4000
+      protocol: TCP
+      name: admin-ui
+      # Service port 4000 maps directly to pod port 4000
+    - port: 5500
+      targetPort: 5500
+      protocol: TCP
+      name: messaging
+    - port: 5577
+      targetPort: 5577
+      protocol: TCP
+      name: ocsp
+    - port: 5588
+      targetPort: 5588
+      protocol: TCP
+      name: proxy-ui
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: proxy-http
+    - port: 8443
+      targetPort: 8443
+      protocol: TCP
+      name: proxy-https
+---
+{{- if and (index .Values "security-server" "Ingress" "enabled") }}
+# ingress route where inbound proxy handles TLS
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "x-road-ssx.fullnameWithId" $ }}-https
+  annotations:
+    # TLS passthrough: SSL terminates at backend (ss-0), Nginx reads SNI for routing
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    # Timeout settings for SSL passthrough
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - {{ include "x-road-ssx.ingressFqdn" $ }}
+  rules:
+    - host: {{ include "x-road-ssx.ingressFqdn" $ }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "x-road-ssx.fullnameWithId" $ }}
+                port:
+                  number: 4000  # MSS service port (maps to pod port 4000)
+---
+# X-Road Security Server Message Exchange LoadBalancer Service (BB-IM)
+# Exposes port 5500 (message exchange) via MetalLB
+# CRITICAL: This port is used for inter-Security Server communication
+# NOTE: BB-IM hosts BOTH Central Server AND Security Server (dual role)
+apiVersion: v1
+kind: Service
+metadata:
+  name: xroad-ss-messaging-lb
+  namespace: im-ns
+  labels:
+    app.kubernetes.io/name: xroad-security-server
+    app.kubernetes.io/component: security-server
+    app.kubernetes.io/part-of: x-road-information-mediator
+    govstack.im/port-type: message-exchange
+    govstack.im/cluster-role: dual  # BB-IM hosts both CS and SS
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.0.0.100
+    metallb.universe.tf/allow-shared-ip: "cluster-shared"
+    govstack.im/port-description: "X-Road Security Server message exchange (inter-server communication)"
+    govstack.im/external-port: "5500"
+    govstack.im/protocol-notes: "HTTPS protocol for X-Road message exchange"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - name: message-exchange
+      protocol: TCP
+      port: 5500
+      targetPort: 5500
+  selector:
+    app.kubernetes.io/name: xroad-security-server
+    app.kubernetes.io/component: security-server
+---
+# X-Road Security Server OCSP LoadBalancer Service (BB-IM)
+# Exposes port 5577 (OCSP responses) via MetalLB
+# CRITICAL: This port is used for certificate validation via OCSP protocol
+# NOTE: BB-IM hosts BOTH Central Server AND Security Server (dual role)
+apiVersion: v1
+kind: Service
+metadata:
+  name: xroad-ss-ocsp-lb
+  namespace: im-ns
+  labels:
+    app.kubernetes.io/name: xroad-security-server
+    app.kubernetes.io/component: security-server
+    app.kubernetes.io/part-of: x-road-information-mediator
+    govstack.im/port-type: ocsp
+    govstack.im/cluster-role: dual  # BB-IM hosts both CS and SS
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.0.0.100
+    metallb.universe.tf/allow-shared-ip: "cluster-shared"
+    govstack.im/port-description: "X-Road Security Server OCSP responses (certificate validation)"
+    govstack.im/external-port: "5577"
+    govstack.im/protocol-notes: "HTTP protocol for OCSP certificate validation"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - name: ocsp
+      protocol: TCP
+      port: 5577
+      targetPort: 5577
+  selector:
+    app.kubernetes.io/name: xroad-security-server
+    app.kubernetes.io/component: security-server
+---
+{{- if and (index .Values "security-server" "Ingress" "traefik" "enabled") }}
+{{- include "x-road-ssx.traefik.ingress" . }}
+{{- end }}
+{{- end }}
+# End of Ingress resources block (closes if from line 124)

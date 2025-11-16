@@ -1,0 +1,72 @@
+---
+nameOverride: ""
+fullnameOverride: "cs"
+
+central-server:
+  serverId: "1"
+  repository: "niis/xroad-central-server"  # serverImage: "ghcr.io/nordic-institute/xrddev-central-server"
+  imageTag: "noble-7.6.1" # serverTag: "latest"
+  resources:
+    requests:
+      memory: 2Gi
+      cpu: 500m
+    limits:
+      memory: 4Gi
+      cpu: 2
+  persistence:
+    enabled: true
+    config:
+      size: 1Gi
+#      storageClassName: ""
+      bind:
+        enabled: false
+        volumeName: ""
+        matchLabels: {}
+        matchExpressions: []
+    lib:
+      size: 1Gi
+#      storageClassName: ""
+      bind:
+        enabled: false
+        volumeName: ""
+        matchLabels: {}
+        matchExpressions: []
+    dbdata:
+      size: 2Gi
+#      storageClassName: "" 
+      bind:
+        enabled: false
+        volumeName: ""
+        matchLabels: {}
+        matchExpressions: []
+  Ingress:
+    enabled: true
+    tldDomain: im.assembly.govstack.global
+    traefik:
+      enabled: false
+  Service:
+    type: ClusterIP  # ClusterIP - all external access via Ingress
+    annotations: {}
+
+postgres:
+  enabled: true
+  resources:
+    requests:
+      memory: 2Gi
+      cpu: 500m
+    limits:
+      memory: 4Gi
+      cpu: 2
+  persistence:
+    enabled: true
+    pgdata:
+      size: 10Gi
+#      storageClassName: ""
+      bind:
+        enabled: false
+        volumeName: ""
+        matchLabels: {}
+        matchExpressions: []
+
+# It is not used ATM, fix later
+# serviceExtEnabled: false

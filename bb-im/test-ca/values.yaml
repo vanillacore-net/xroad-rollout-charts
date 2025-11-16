@@ -1,0 +1,21 @@
+---
+nameOverride: ""
+fullnameOverride: "ca"
+
+test-ca:
+  repository: "ghcr.io/nordic-institute/xrddev-testca"
+  imageTag: "latest"
+  persistence:
+    enabled: true
+    config:
+      size: 1Gi
+#      storageClassName: ""
+      bind:
+        enabled: false
+        volumeName: ""
+        matchLabels: {}
+        matchExpressions: []
+  Service:
+    type: ClusterIP  # Changed to ClusterIP - CA services accessed via Ingress on port 443
+    # No LoadBalancer needed - CA (ocsp, acme, tsa) accessed via Ingress Controller
+    annotations: {}

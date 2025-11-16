@@ -1,0 +1,32 @@
+[ req ]
+prompt = no
+distinguished_name = dn
+req_extensions = v3_req
+
+[ dn ]
+CN = *.test.x-road-sh.de
+C  = DE
+ST = Schleswig-Holstein
+L  = Kiel
+O  = Nortal AG
+OU = IT
+
+[ v3_req ]
+basicConstraints = CA:FALSE
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = cs-1
+DNS.2 = cs-2
+DNS.3 = ss-0
+DNS.4 = ss-1
+DNS.5 = ss-2
+DNS.6 = ss-3
+DNS.7 = ss-4
+DNS.8 = ss-5
+DNS.9 = *.test.x-road-sh.de
+DNS.10 = *.svc.cluster.local
+# DNS.2 = cs-1.example.local
+# Add your FQDN(s) too if applicable:

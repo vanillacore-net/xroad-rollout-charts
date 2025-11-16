@@ -1,0 +1,44 @@
+{{/*
+Init container for initializing local PostgreSQL database (only when postgres.enabled is false)
+*/}}
+{{- define "x-road-csx.container.init.initDb" -}}
+{{- if not (index .Values "postgres" "enabled") }}
+# Only initialize local database if external postgres is disabled
+- name: init-db
+  image:  "{{ index .Values "central-server" "repository" }}:{{ index .Values "central-server" "imageTag" }}"
+  imagePullPolicy: Always
+  command:
+    - bash
+    - -c
+  args:
+    - |
+      set -euo pipefail
+
+      echo "=== PostgreSQL Data Init Container ==="
+      if [ -z "$(ls -A /xroad-db)" ]; then
+        echo "--- /xroad-db is empty, copying PostgreSQL data..."
+
+        cp -r /var/lib/postgresql/16/main/* /xroad-db/
+        chown -R postgres:postgres /xroad-db
+
+        echo "--- Setting permissions: directories 0750, files 0640"
+        find /xroad-db -type d -exec chmod 0750 {} \;
+        find /xroad-db -type f -exec chmod 0640 {} \;
+
+        echo "--- Data copy completed"
+      else
+        echo "--- /xroad-db is not empty, ensuring proper ownership..."
+        # Ensure ownership is correct even if data already exists
+        chown -R postgres:postgres /xroad-db
+        find /xroad-db -type d -exec chmod 0750 {} \;
+        find /xroad-db -type f -exec chmod 0640 {} \;
+        ls -la /xroad-db
+      fi
+
+      echo "--- PostgreSQL data init completed"
+  volumeMounts:
+    - mountPath: /xroad-db
+      name: xroad-dbdata
+{{- end }}
+{{- end }}
+
