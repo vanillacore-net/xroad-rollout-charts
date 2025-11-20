@@ -43,12 +43,12 @@ This guide covers deploying X-Road Information Mediator to the BB-IM cluster usi
 
 ### MetalLB Virtual IP (VIP)
 All LoadBalancer services share VIP **10.0.0.100** using annotation:
-\`\`\`yaml
+```yaml
 metallb.universe.tf/allow-shared-ip: "shared-vip"
-\`\`\`
+```
 
 ### Traffic Flow - Central Server
-\`\`\`
+```
 External User
   ↓
 cs.<domain> (DNS)
@@ -58,7 +58,7 @@ cs.<domain> (DNS)
 10.0.0.100:port (MetalLB VIP)
   ↓
 Central Server Pod
-\`\`\`
+```
 
 ### Port Access Patterns
 | Port | Service | VPN Access | External Access | Gateway |
