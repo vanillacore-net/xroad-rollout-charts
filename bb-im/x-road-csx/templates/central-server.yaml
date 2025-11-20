@@ -288,8 +288,8 @@ metadata:
     app.kubernetes.io/part-of: x-road-information-mediator
     govstack.im/port-type: admin
   annotations:
-    metallb.universe.tf/loadBalancerIPs: 10.0.0.100
-    metallb.universe.tf/allow-shared-ip: "shared-vip"
+    metallb.io/loadBalancerIPs: 10.0.0.100
+    metallb.io/allow-shared-ip: "shared-vip"
     govstack.im/port-description: "X-Road Central Server administration interface"
     govstack.im/external-port: "4000"
 spec:
@@ -317,8 +317,8 @@ metadata:
     app.kubernetes.io/part-of: x-road-information-mediator
     govstack.im/port-type: reg
   annotations:
-    metallb.universe.tf/loadBalancerIPs: 10.0.0.100
-    metallb.universe.tf/allow-shared-ip: "shared-vip"
+    metallb.io/loadBalancerIPs: 10.0.0.100
+    metallb.io/allow-shared-ip: "shared-vip"
     govstack.im/port-description: "X-Road Central Server registration interface"
     govstack.im/external-port: "4001"
 spec:
