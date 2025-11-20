@@ -13,7 +13,7 @@ This guide covers deploying X-Road Information Mediator to the BB-IM cluster usi
 
 2. **Kubeconfig**: BB-IM kubeconfig configured
    ```bash
-   export KUBECONFIG=k8s/bb-im/kubeconfig
+   export KUBECONFIG=/data/shared/Work/Engineering/govstack/setup/openstack/rollout/k8s/bb-im/kubeconfig
    ```
 
 3. **Namespace**: Verify xroad-im namespace exists
@@ -132,7 +132,7 @@ Expected output:
 These expose Central Server ports externally via MetalLB.
 
 ```bash
-cd metallb-services/bb-im-second
+cd metallb-services/bb-im
 
 # Deploy LoadBalancer services
 kubectl apply -f xroad-cs-admin-ui-4000-lb.yaml
