@@ -74,6 +74,8 @@ Central Server Pod
 
 **Admin UI Access**: Only accessible via VPN connection - NOT exposed externally.
 ```bash
+### Step 1: Deploy Test CA (Trust Anchor)
+
 cd bb-im/test-ca
 
 # Modify script to use xroad-im namespace (script hardcodes test-ca)
