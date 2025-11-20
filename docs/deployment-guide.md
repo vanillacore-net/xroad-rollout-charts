@@ -8,7 +8,7 @@ This guide covers deploying X-Road Information Mediator to the BB-IM cluster usi
 
 1. **VPN Access**: Connected to BB-IM cluster via VPN
    ```bash
-   sudo wg-quick up wireguard/bb-im/admin.conf
+   sudo wg-quick up /data/shared/Work/Engineering/govstack/setup/openstack/rollout/wireguard/bb-im/admin.conf
    ```
 
 2. **Kubeconfig**: BB-IM kubeconfig configured
@@ -182,10 +182,10 @@ Security Server mediates messages between service providers and consumers.
 cd bb-im/x-road-ssx
 
 # Make script executable
-chmod +x install_ss_1.sh
+chmod +x install_ss_0.sh
 
 # Deploy
-./install_ss_1.sh
+./install_ss_0.sh
 ```
 
 **Verify**:
