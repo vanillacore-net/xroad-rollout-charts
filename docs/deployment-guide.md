@@ -33,9 +33,7 @@ This guide covers deploying X-Road Information Mediator to the BB-IM cluster usi
 |--------|----------|-----------|
 | Namespace | `im-ns` | `xroad-im` |
 | External Access | Ingress (Traefik) | LoadBalancer (MetalLB) |
-| DNS | `*.im.assembly.govstack.global` | IP-based (10.0.0.100) |
 | Service Type | ClusterIP + Ingress | ClusterIP + separate LoadBalancer |
-| Access Method | Public DNS | VPN + LoadBalancer VIP |
 
 ## External Access Architecture
 
