@@ -40,8 +40,8 @@ This guide covers deploying X-Road Information Mediator to the BB-IM cluster usi
 ## External Access Architecture
 
 ### DNS Mapping
-- **Central Server**: `cs.im.assembly.govstack.global` → 49.13.243.37 (BB-IM gateway) → 10.0.0.100
-- **Security Server**: 49.13.243.43 (BB-IM-SECOND gateway) → 10.0.0.100
+- **Central Server**: `cs.<domain>` → <bb-im-gateway-ip> (BB-IM gateway) → 10.0.0.100
+- **Security Server**: <bb-im-second-gateway-ip> (BB-IM-SECOND gateway) → 10.0.0.100
 
 ### MetalLB Virtual IP (VIP)
 All LoadBalancer services share VIP **10.0.0.100** using annotation:
@@ -53,9 +53,9 @@ metallb.universe.tf/allow-shared-ip: "shared-vip"
 \`\`\`
 External User
   ↓
-cs.im.assembly.govstack.global (DNS)
+cs.<domain> (DNS)
   ↓
-49.13.243.37 (BB-IM Gateway External IP)
+<bb-im-gateway-ip> (BB-IM Gateway External IP)
   ↓ (DNAT via iptables)
 10.0.0.100:port (MetalLB VIP)
   ↓
@@ -66,11 +66,11 @@ Central Server Pod
 | Port | Service | VPN Access | External Access | Gateway |
 |------|---------|-----------|-----------------|---------|
 | 4000 | Admin UI | ✅ 10.0.0.100 | ❌ NOT forwarded | - |
-| 4001 | Registration | ✅ 10.0.0.100 | ✅ cs.im...global:4001 | 49.13.243.37 |
-| 8443 | Client HTTPS | ✅ 10.0.0.100 | ✅ cs.im...global:8443 | 49.13.243.37 |
-| 9998 | Test CA | ✅ 10.0.0.100 | ✅ via gateway | 49.13.243.37 |
-| 5500 | SS Messaging | ✅ 10.0.0.100 | ✅ via gateway | 49.13.243.43 |
-| 5577 | SS OCSP | ✅ 10.0.0.100 | ✅ via gateway | 49.13.243.43 |
+| 4001 | Registration | ✅ 10.0.0.100 | ✅ cs.<domain>:4001 | <bb-im-gateway-ip> |
+| 8443 | Client HTTPS | ✅ 10.0.0.100 | ✅ cs.<domain>:8443 | <bb-im-gateway-ip> |
+| 9998 | Test CA | ✅ 10.0.0.100 | ✅ via gateway | <bb-im-gateway-ip> |
+| 5500 | SS Messaging | ✅ 10.0.0.100 | ✅ via gateway | <bb-im-second-gateway-ip> |
+| 5577 | SS OCSP | ✅ 10.0.0.100 | ✅ via gateway | <bb-im-second-gateway-ip> |
 
 **Admin UI Access**: Only accessible via VPN connection - NOT exposed externally.
 
@@ -132,7 +132,7 @@ Expected output:
 These expose Central Server ports externally via MetalLB.
 
 ```bash
-cd metallb-services/bb-im
+cd metallb-services/bb-im-second
 
 # Deploy LoadBalancer services
 kubectl apply -f xroad-cs-admin-ui-4000-lb.yaml
@@ -201,10 +201,10 @@ Expected output:
 ### Step 6: Deploy Security Server LoadBalancer Services
 
 ```bash
-cd metallb-services/bb-im
+cd metallb-services/bb-im-second
 
 # Deploy LoadBalancer services
-kubectl apply -f xroad-ss-admin-ui-40001-lb.yaml
+kubectl apply -f xroad-ss-admin-ui-4000-lb.yaml
 kubectl apply -f xroad-ss-messaging-5500-lb.yaml
 kubectl apply -f xroad-ss-ocsp-5577-lb.yaml
 kubectl apply -f xroad-ss-client-8443-lb.yaml
