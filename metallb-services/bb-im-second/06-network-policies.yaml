@@ -8,7 +8,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: sandbox-xroad-ss1
+      app: mss-0
   policyTypes:
     - Ingress
   ingress:
