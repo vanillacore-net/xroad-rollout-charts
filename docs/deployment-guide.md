@@ -8,12 +8,12 @@ This guide covers deploying X-Road Information Mediator to the BB-IM cluster usi
 
 1. **VPN Access**: Connected to BB-IM cluster via VPN
    ```bash
-   sudo wg-quick up /data/shared/Work/Engineering/govstack/setup/openstack/rollout/wireguard/bb-im/admin.conf
+   sudo wg-quick up wireguard/bb-im/admin.conf
    ```
 
 2. **Kubeconfig**: BB-IM kubeconfig configured
    ```bash
-   export KUBECONFIG=/data/shared/Work/Engineering/govstack/setup/openstack/rollout/k8s/bb-im/kubeconfig
+   export KUBECONFIG=k8s/bb-im/kubeconfig
    ```
 
 3. **Namespace**: Verify xroad-im namespace exists
@@ -37,6 +37,43 @@ This guide covers deploying X-Road Information Mediator to the BB-IM cluster usi
 | Service Type | ClusterIP + Ingress | ClusterIP + separate LoadBalancer |
 | Access Method | Public DNS | VPN + LoadBalancer VIP |
 
+## External Access Architecture
+
+### DNS Mapping
+- **Central Server**: `cs.im.assembly.govstack.global` → 49.13.243.37 (BB-IM gateway) → 10.0.0.100
+- **Security Server**: 49.13.243.43 (BB-IM-SECOND gateway) → 10.0.0.100
+
+### MetalLB Virtual IP (VIP)
+All LoadBalancer services share VIP **10.0.0.100** using annotation:
+\`\`\`yaml
+metallb.universe.tf/allow-shared-ip: "shared-vip"
+\`\`\`
+
+### Traffic Flow - Central Server
+\`\`\`
+External User
+  ↓
+cs.im.assembly.govstack.global (DNS)
+  ↓
+49.13.243.37 (BB-IM Gateway External IP)
+  ↓ (DNAT via iptables)
+10.0.0.100:port (MetalLB VIP)
+  ↓
+Central Server Pod
+\`\`\`
+
+### Port Access Patterns
+| Port | Service | VPN Access | External Access | Gateway |
+|------|---------|-----------|-----------------|---------|
+| 4000 | Admin UI | ✅ 10.0.0.100 | ❌ NOT forwarded | - |
+| 4001 | Registration | ✅ 10.0.0.100 | ✅ cs.im...global:4001 | 49.13.243.37 |
+| 8443 | Client HTTPS | ✅ 10.0.0.100 | ✅ cs.im...global:8443 | 49.13.243.37 |
+| 9998 | Test CA | ✅ 10.0.0.100 | ✅ via gateway | 49.13.243.37 |
+| 5500 | SS Messaging | ✅ 10.0.0.100 | ✅ via gateway | 49.13.243.43 |
+| 5577 | SS OCSP | ✅ 10.0.0.100 | ✅ via gateway | 49.13.243.43 |
+
+**Admin UI Access**: Only accessible via VPN connection - NOT exposed externally.
+
 ## Deployment Order
 
 **CRITICAL**: Components must be deployed in this exact order due to dependencies.
@@ -46,13 +83,13 @@ This guide covers deploying X-Road Information Mediator to the BB-IM cluster usi
 Test CA provides ACME, OCSP, and TSA services required by Central Server and Security Server.
 
 ```bash
-cd /data/shared/Work/Engineering/govstack/setup/openstack/rollout/kubernetes/information-mediator/bb-im/test-ca
+cd bb-im/test-ca
 
 # Make script executable
-chmod +x install-xroad-im.sh
+chmod +x install.sh
 
 # Deploy
-./install-xroad-im.sh
+./install.sh
 ```
 
 **Verify**:
@@ -70,13 +107,13 @@ Expected output:
 Central Server is the governance component that manages the X-Road ecosystem.
 
 ```bash
-cd /data/shared/Work/Engineering/govstack/setup/openstack/rollout/kubernetes/information-mediator/bb-im/x-road-csx
+cd bb-im/x-road-csx
 
 # Make script executable
-chmod +x install-xroad-im.sh
+chmod +x install_cs_1.sh
 
 # Deploy
-./install-xroad-im.sh
+./install_cs_1.sh
 ```
 
 **Verify**:
@@ -95,7 +132,7 @@ Expected output:
 These expose Central Server ports externally via MetalLB.
 
 ```bash
-cd /data/shared/Work/Engineering/govstack/setup/openstack/rollout/kubernetes/bb-im
+cd metallb-services/bb-im
 
 # Deploy LoadBalancer services
 kubectl apply -f xroad-cs-admin-ui-4000-lb.yaml
@@ -142,13 +179,13 @@ https://localhost:4000
 Security Server mediates messages between service providers and consumers.
 
 ```bash
-cd /data/shared/Work/Engineering/govstack/setup/openstack/rollout/kubernetes/information-mediator/bb-im/x-road-ssx
+cd bb-im/x-road-ssx
 
 # Make script executable
-chmod +x install-xroad-im.sh
+chmod +x install_ss_1.sh
 
 # Deploy
-./install-xroad-im.sh
+./install_ss_1.sh
 ```
 
 **Verify**:
@@ -164,7 +201,7 @@ Expected output:
 ### Step 6: Deploy Security Server LoadBalancer Services
 
 ```bash
-cd /data/shared/Work/Engineering/govstack/setup/openstack/rollout/kubernetes/bb-im
+cd metallb-services/bb-im
 
 # Deploy LoadBalancer services
 kubectl apply -f xroad-ss-admin-ui-40001-lb.yaml
@@ -288,14 +325,14 @@ kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- curl -k ht
 
 1. **Example Services** (for testing):
    ```bash
-   cd /data/shared/Work/Engineering/govstack/setup/openstack/rollout/kubernetes/information-mediator/bb-im/example-service
+   cd bb-im/example-service
    # Update namespace in templates to xroad-im
    helm install example-service . -n xroad-im
    ```
 
 2. **Auto-Configuration** (hurl scripts):
    ```bash
-   cd /data/shared/Work/Engineering/govstack/setup/openstack/rollout/kubernetes/information-mediator/bb-im/hurl-auto-config
+   cd bb-im/hurl-auto-config
    # Update namespace and endpoints
    # Review and run configuration scripts
    ```
