@@ -63,23 +63,16 @@ Central Server Pod
 ### Port Access Patterns
 | Port | Service | VPN Access | External Access | Gateway |
 |------|---------|-----------|-----------------|---------|
-| 4000 | Admin UI | ✅ 10.0.0.100 | ❌ NOT forwarded | - |
-| 4001 | Registration | ✅ 10.0.0.100 | ✅ cs.<domain>:4001 | <bb-im-gateway-ip> |
-| 8443 | Client HTTPS | ✅ 10.0.0.100 | ✅ cs.<domain>:8443 | <bb-im-gateway-ip> |
-| 9998 | Test CA | ✅ 10.0.0.100 | ✅ via gateway | <bb-im-gateway-ip> |
-| 5500 | SS Messaging | ✅ 10.0.0.100 | ✅ via gateway | <bb-im-second-gateway-ip> |
-| 5577 | SS OCSP | ✅ 10.0.0.100 | ✅ via gateway | <bb-im-second-gateway-ip> |
+| 4000 | CS Admin UI | ✅ 10.0.0.100 | ❌ NOT forwarded | - |
+| 4001 | CS Registration | ✅ 10.0.0.100 | ✅ cs.<domain>:4001 | BB-IM gateway |
+| 8443 | CS Client HTTPS | ✅ 10.0.0.100 | ✅ cs.<domain>:8443 | BB-IM gateway |
+| 9998 | CS Test CA | ✅ 10.0.0.100 | ✅ via gateway | BB-IM gateway |
+| 40001 | SS Admin UI | ✅ 10.0.0.100 | ❌ NOT forwarded | - |
+| 5500 | SS Messaging | ✅ 10.0.0.100 | ✅ via gateway | BB-IM-SECOND gateway |
+| 5577 | SS OCSP | ✅ 10.0.0.100 | ✅ via gateway | BB-IM-SECOND gateway |
+| 8443 | SS Client HTTPS | ✅ 10.0.0.100 | ✅ via gateway | BB-IM-SECOND gateway |
 
 **Admin UI Access**: Only accessible via VPN connection - NOT exposed externally.
-
-## Deployment Order
-
-**CRITICAL**: Components must be deployed in this exact order due to dependencies.
-
-### Step 1: Deploy Test CA (Trust Anchor)
-
-Test CA provides ACME, OCSP, and TSA services required by Central Server and Security Server.
-
 ```bash
 cd bb-im/test-ca
 
