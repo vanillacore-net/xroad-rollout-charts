@@ -281,7 +281,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: xroad-cs-admin-lb
-  namespace: im-ns
+  namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: xroad-central-server
     app.kubernetes.io/component: central-server
@@ -310,7 +310,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: xroad-cs-reg-lb
-  namespace: im-ns
+  namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: xroad-central-server
     app.kubernetes.io/component: central-server
