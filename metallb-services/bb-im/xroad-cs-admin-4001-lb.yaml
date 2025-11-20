@@ -12,8 +12,8 @@ metadata:
     app.kubernetes.io/part-of: x-road-information-mediator
     govstack.im/port-type: admin
   annotations:
-    # MetalLB annotations (both legacy universe.tf and current metallb.io) so this
-    # service can share the VIP 10.0.0.100 with ingress on the same sharing key.
+    # MetalLB IP sharing annotations using current metallb.io standard.
+    # All services share VIP 10.0.0.100 using sharing key "shared-vip".
     metallb.io/loadBalancerIPs: 10.0.0.100
     metallb.io/allow-shared-ip: "shared-vip"
     govstack.im/port-description: "X-Road Central Server administration interface"
