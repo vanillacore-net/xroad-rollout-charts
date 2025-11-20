@@ -186,24 +186,24 @@ Security Server mediates messages between service providers and consumers.
 cd bb-im/x-road-ssx
 
 # Modify script to use xroad-im namespace (script hardcodes im-ns)
-sed -i 's/NAMESPACE="im-ns"/NAMESPACE="xroad-im"/' install_ss_0.sh
+sed -i 's/NAMESPACE="im-ns"/NAMESPACE="xroad-im"/' install_ss_1.sh
 
 # Make script executable
-chmod +x install_ss_0.sh
+chmod +x install_ss_1.sh
 
 # Deploy
-./install_ss_0.sh
+./install_ss_1.sh
 ```
 
 **Verify**:
 ```bash
 kubectl get pods -n xroad-im -l app.kubernetes.io/component=security-server
-kubectl get svc -n xroad-im | grep mss-0
+kubectl get svc -n xroad-im | grep mss-1
 ```
 
 Expected output:
-- Pod: `mss-0-*` in Running state
-- Service: `mss-0` (ClusterIP)
+- Pod: `mss-1-*` in Running state
+- Service: `mss-1` (ClusterIP)
 
 ### Step 6: Deploy Security Server LoadBalancer Services
 
