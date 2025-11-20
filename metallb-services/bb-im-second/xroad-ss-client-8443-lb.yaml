@@ -27,4 +27,4 @@ spec:
       port: 8443
       targetPort: 8443
   selector:
-    app: sandbox-xroad-ss1
+    app: mss-0

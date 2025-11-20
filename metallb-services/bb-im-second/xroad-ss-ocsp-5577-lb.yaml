@@ -27,4 +27,4 @@ spec:
       port: 5577
       targetPort: 5577
   selector:
-    app: sandbox-xroad-ss1
+    app: mss-0
