@@ -189,7 +189,7 @@ metadata:
     govstack.im/cluster-role: dual  # BB-IM hosts both CS and SS
   annotations:
     metallb.universe.tf/loadBalancerIPs: 10.0.0.100
-    metallb.universe.tf/allow-shared-ip: "cluster-shared"
+    metallb.universe.tf/allow-shared-ip: "shared-vip"
     govstack.im/port-description: "X-Road Security Server message exchange (inter-server communication)"
     govstack.im/external-port: "5500"
     govstack.im/protocol-notes: "HTTPS protocol for X-Road message exchange"
@@ -222,7 +222,7 @@ metadata:
     govstack.im/cluster-role: dual  # BB-IM hosts both CS and SS
   annotations:
     metallb.universe.tf/loadBalancerIPs: 10.0.0.100
-    metallb.universe.tf/allow-shared-ip: "cluster-shared"
+    metallb.universe.tf/allow-shared-ip: "shared-vip"
     govstack.im/port-description: "X-Road Security Server OCSP responses (certificate validation)"
     govstack.im/external-port: "5577"
     govstack.im/protocol-notes: "HTTP protocol for OCSP certificate validation"
