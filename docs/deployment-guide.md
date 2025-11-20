@@ -85,6 +85,9 @@ Test CA provides ACME, OCSP, and TSA services required by Central Server and Sec
 ```bash
 cd bb-im/test-ca
 
+# Set namespace to xroad-im (script defaults to test-ca)
+export NAMESPACE=xroad-im
+
 # Make script executable
 chmod +x install.sh
 
@@ -108,6 +111,9 @@ Central Server is the governance component that manages the X-Road ecosystem.
 
 ```bash
 cd bb-im/x-road-csx
+
+# Set namespace to xroad-im (script defaults to im-ns)
+export NAMESPACE=xroad-im
 
 # Make script executable
 chmod +x install_cs_1.sh
@@ -180,6 +186,9 @@ Security Server mediates messages between service providers and consumers.
 
 ```bash
 cd bb-im/x-road-ssx
+
+# Set namespace to xroad-im (script defaults to im-ns)
+export NAMESPACE=xroad-im
 
 # Make script executable
 chmod +x install_ss_0.sh
