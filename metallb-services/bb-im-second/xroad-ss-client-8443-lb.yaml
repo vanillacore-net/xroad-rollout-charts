@@ -1,0 +1,30 @@
+---
+# X-Road Security Server Client HTTPS LoadBalancer Service
+# Exposes port 8443 (client HTTPS interface) via MetalLB
+# Used for management interface and client connections
+apiVersion: v1
+kind: Service
+metadata:
+  name: xroad-ss-client-lb
+  namespace: xroad-im
+  labels:
+    app.kubernetes.io/name: xroad-security-server
+    app.kubernetes.io/component: security-server
+    app.kubernetes.io/part-of: x-road-information-mediator
+    govstack.im/port-type: client-https
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.0.0.100
+    metallb.universe.tf/allow-shared-ip: "shared-vip"
+    govstack.im/port-description: "X-Road Security Server client HTTPS interface"
+    govstack.im/external-port: "8443"
+    govstack.im/protocol-notes: "HTTPS protocol for management and client connections"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - name: client-https
+      protocol: TCP
+      port: 8443
+      targetPort: 8443
+  selector:
+    app: sandbox-xroad-ss1

@@ -1,0 +1,25 @@
+---
+# Allow X-Road traffic to Security Server (including admin UI via VPN)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: xroad-ss-allow-traffic
+  namespace: xroad-im
+spec:
+  podSelector:
+    matchLabels:
+      app: sandbox-xroad-ss1
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow all X-Road ports from anywhere (VPN users, LoadBalancer, external clients)
+    # No 'from' restriction - allows traffic from pods, nodes, and external sources
+    - ports:
+        - protocol: TCP
+          port: 4000  # Admin UI (VPN access only - gateway doesn't forward)
+        - protocol: TCP
+          port: 5500  # Security Server message exchange
+        - protocol: TCP
+          port: 5577  # Security Server OCSP
+        - protocol: TCP
+          port: 8443  # Security Server client HTTPS

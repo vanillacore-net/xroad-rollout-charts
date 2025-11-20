@@ -1,0 +1,30 @@
+---
+# X-Road Security Server OCSP LoadBalancer Service
+# Exposes port 5577 (OCSP responses) via MetalLB
+# CRITICAL: This port is used for certificate validation via OCSP protocol
+apiVersion: v1
+kind: Service
+metadata:
+  name: xroad-ss-ocsp-lb
+  namespace: xroad-im
+  labels:
+    app.kubernetes.io/name: xroad-security-server
+    app.kubernetes.io/component: security-server
+    app.kubernetes.io/part-of: x-road-information-mediator
+    govstack.im/port-type: ocsp
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.0.0.100
+    metallb.universe.tf/allow-shared-ip: "shared-vip"
+    govstack.im/port-description: "X-Road Security Server OCSP responses (certificate validation)"
+    govstack.im/external-port: "5577"
+    govstack.im/protocol-notes: "HTTP protocol for OCSP certificate validation"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - name: ocsp
+      protocol: TCP
+      port: 5577
+      targetPort: 5577
+  selector:
+    app: sandbox-xroad-ss1

@@ -1,0 +1,28 @@
+---
+# X-Road Central Server Administration Port LoadBalancer Service
+# Exposes port 4001 (admin interface) via MetalLB
+apiVersion: v1
+kind: Service
+metadata:
+  name: xroad-cs-admin-lb
+  namespace: xroad-im
+  labels:
+    app.kubernetes.io/name: xroad-central-server
+    app.kubernetes.io/component: central-server
+    app.kubernetes.io/part-of: x-road-information-mediator
+    govstack.im/port-type: admin
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.0.0.100
+    metallb.universe.tf/allow-shared-ip: "shared-vip"
+    govstack.im/port-description: "X-Road Central Server administration interface"
+    govstack.im/external-port: "4001"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - name: admin
+      protocol: TCP
+      port: 4001
+      targetPort: 4001
+  selector:
+    app: sandbox-xroad-cs

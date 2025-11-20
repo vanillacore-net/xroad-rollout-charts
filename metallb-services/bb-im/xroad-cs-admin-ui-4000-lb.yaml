@@ -1,0 +1,30 @@
+---
+# X-Road Central Server Admin UI LoadBalancer Service
+# Exposes port 4000 (admin UI) via MetalLB
+# IMPORTANT: Gateway does NOT forward this port - VPN access only
+apiVersion: v1
+kind: Service
+metadata:
+  name: xroad-cs-admin-ui-lb
+  namespace: xroad-im
+  labels:
+    app.kubernetes.io/name: xroad-central-server
+    app.kubernetes.io/component: central-server
+    app.kubernetes.io/part-of: x-road-information-mediator
+    govstack.im/port-type: admin-ui
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: 10.0.0.100
+    metallb.universe.tf/allow-shared-ip: "shared-vip"
+    govstack.im/port-description: "X-Road Central Server admin UI (VPN access only)"
+    govstack.im/external-port: "4000"
+    govstack.im/security-note: "Not forwarded by gateway - VPN users only"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+    - name: admin-ui
+      protocol: TCP
+      port: 4000
+      targetPort: 4000
+  selector:
+    app: sandbox-xroad-cs
