@@ -191,12 +191,12 @@ chmod +x install_ss_1.sh
 **Verify**:
 ```bash
 kubectl get pods -n xroad-im -l app.kubernetes.io/component=security-server
-kubectl get svc -n xroad-im | grep mss-1
+kubectl get svc -n xroad-im | grep mss-0
 ```
 
 Expected output:
-- Pod: `mss-1-*` in Running state
-- Service: `mss-1` (ClusterIP)
+- Pod: `mss-0-*` in Running state
+- Service: `mss-0` (ClusterIP)
 
 ### Step 6: Deploy Security Server LoadBalancer Services
 

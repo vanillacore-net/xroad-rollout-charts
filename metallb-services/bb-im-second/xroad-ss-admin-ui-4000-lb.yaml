@@ -27,4 +27,4 @@ spec:
       port: 40001  # External port (consistent with BB-IM)
       targetPort: 4000  # Internal container port
   selector:
-    app: sandbox-xroad-ss1
+    app: mss-0
