@@ -21,7 +21,7 @@ metadata:
     govstack.im/security-warning: "Remove in production environments"
 spec:
   type: LoadBalancer
-  externalTrafficPolicy: Local
+  externalTrafficPolicy: Cluster
   ports:
     - name: test-ca
       protocol: TCP

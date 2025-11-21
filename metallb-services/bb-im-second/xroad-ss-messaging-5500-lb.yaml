@@ -20,7 +20,7 @@ metadata:
     govstack.im/protocol-notes: "HTTPS protocol for X-Road message exchange"
 spec:
   type: LoadBalancer
-  externalTrafficPolicy: Local
+  externalTrafficPolicy: Cluster
   ports:
     - name: message-exchange
       protocol: TCP

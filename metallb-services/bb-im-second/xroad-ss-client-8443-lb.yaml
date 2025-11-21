@@ -20,7 +20,7 @@ metadata:
     govstack.im/protocol-notes: "HTTPS protocol for management and client connections"
 spec:
   type: LoadBalancer
-  externalTrafficPolicy: Local
+  externalTrafficPolicy: Cluster
   ports:
     - name: client-https
       protocol: TCP

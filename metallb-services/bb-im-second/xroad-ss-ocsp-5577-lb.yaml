@@ -20,7 +20,7 @@ metadata:
     govstack.im/protocol-notes: "HTTP protocol for OCSP certificate validation"
 spec:
   type: LoadBalancer
-  externalTrafficPolicy: Local
+  externalTrafficPolicy: Cluster
   ports:
     - name: ocsp
       protocol: TCP
