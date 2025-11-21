@@ -18,7 +18,7 @@ metadata:
     govstack.im/external-port: "8443"
 spec:
   type: LoadBalancer
-  externalTrafficPolicy: Local
+  externalTrafficPolicy: Cluster
   ports:
     - name: client-https
       protocol: TCP
