@@ -195,7 +195,7 @@ metadata:
     govstack.im/protocol-notes: "HTTPS protocol for X-Road message exchange"
 spec:
   type: LoadBalancer
-  externalTrafficPolicy: Local
+  externalTrafficPolicy: Cluster
   ports:
     - name: message-exchange
       protocol: TCP
@@ -228,7 +228,7 @@ metadata:
     govstack.im/protocol-notes: "HTTP protocol for OCSP certificate validation"
 spec:
   type: LoadBalancer
-  externalTrafficPolicy: Local
+  externalTrafficPolicy: Cluster
   ports:
     - name: ocsp
       protocol: TCP

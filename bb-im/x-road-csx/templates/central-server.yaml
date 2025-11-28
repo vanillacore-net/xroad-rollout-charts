@@ -294,7 +294,7 @@ metadata:
     govstack.im/external-port: "4000"
 spec:
   type: LoadBalancer
-  externalTrafficPolicy: Local
+  externalTrafficPolicy: Cluster
   ports:
     - name: admin
       protocol: TCP
@@ -323,7 +323,7 @@ metadata:
     govstack.im/external-port: "4001"
 spec:
   type: LoadBalancer
-  externalTrafficPolicy: Local
+  externalTrafficPolicy: Cluster
   ports:
     - name: reg
       protocol: TCP
